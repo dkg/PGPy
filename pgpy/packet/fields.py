@@ -51,6 +51,8 @@ from .subpackets import UserAttribute
 from .subpackets import signature
 from .subpackets import userattribute
 
+from .subpackets.types import SubPacket
+
 from .types import MPI
 from .types import MPIs
 
@@ -134,10 +136,14 @@ __all__ = ['SubPackets',
 class SubPackets(collections.abc.MutableMapping, Field):
     _spmodule = signature
 
-    def __init__(self):
+    def __init__(self, width:int=2) -> None:
         super(SubPackets, self).__init__()
-        self._hashed_sp = collections.OrderedDict()
-        self._unhashed_sp = collections.OrderedDict()
+        self._hashed_sp:collections.OrderedDict [str,SubPacket] = collections.OrderedDict()
+        self._unhashed_sp:collections.OrderedDict[str,SubPacket] = collections.OrderedDict()
+        # self._width represents how wide the size field is when these
+        # subpackets are put on the wire.  v4 subpackets use a width
+        # of 2.  newer subpackets use a width of 4.
+        self._width = width
 
     def __bytearray__(self):
         _bytes = bytearray()
@@ -147,14 +153,14 @@ class SubPackets(collections.abc.MutableMapping, Field):
 
     def __hashbytearray__(self):
         _bytes = bytearray()
-        _bytes += self.int_to_bytes(sum(len(sp) for sp in self._hashed_sp.values()), 2)
+        _bytes += self.int_to_bytes(sum(len(sp) for sp in self._hashed_sp.values()), self._width)
         for hsp in self._hashed_sp.values():
             _bytes += hsp.__bytearray__()
         return _bytes
 
     def __unhashbytearray__(self):
         _bytes = bytearray()
-        _bytes += self.int_to_bytes(sum(len(sp) for sp in self._unhashed_sp.values()), 2)
+        _bytes += self.int_to_bytes(sum(len(sp) for sp in self._unhashed_sp.values()), self._width)
         for uhsp in self._unhashed_sp.values():
             _bytes += uhsp.__bytearray__()
         return _bytes
@@ -205,7 +211,7 @@ class SubPackets(collections.abc.MutableMapping, Field):
         return key in set(k for k, _ in itertools.chain(self._hashed_sp, self._unhashed_sp))
 
     def __copy__(self):
-        sp = SubPackets()
+        sp = SubPackets(self._width)
         sp._hashed_sp = self._hashed_sp.copy()
         sp._unhashed_sp = self._unhashed_sp.copy()
 
@@ -243,8 +249,8 @@ class SubPackets(collections.abc.MutableMapping, Field):
         self._unhashed_sp = collections.OrderedDict(sorted(self._unhashed_sp.items(), key=lambda x: (x[1].__typeid__, x[0][1])))
 
     def parse(self, packet):
-        hl = self.bytes_to_int(packet[:2])
-        del packet[:2]
+        hl = self.bytes_to_int(packet[:self._width])
+        del packet[:self._width]
 
         # we do it this way because we can't ensure that subpacket headers are sized appropriately
         # for their contents, but we can at least output that correctly
@@ -254,8 +260,8 @@ class SubPackets(collections.abc.MutableMapping, Field):
             sp = SignatureSP(packet)
             self['h_' + sp.__class__.__name__] = sp
 
-        uhl = self.bytes_to_int(packet[:2])
-        del packet[:2]
+        uhl = self.bytes_to_int(packet[:self._width])
+        del packet[:self._width]
 
         plen = len(packet)
         while plen - len(packet) < uhl:

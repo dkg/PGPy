@@ -568,13 +568,14 @@ class OnePassSignatureV3(OnePassSignature):
 class Signature(VersionedPacket):
     __typeid__ = PacketTag.Signature
     __ver__ = 0
+    __subpacket_width__ = 2
 
     def __init__(self) -> None:
         super().__init__()
         self._sigtype:Optional[SignatureType] = None
         self._pubalg:Optional[PubKeyAlgorithm] = None
         self._halg:Optional[HashAlgorithm] = None
-        self.subpackets = SubPackets()
+        self.subpackets = SubPackets(self.__subpacket_width__)
         self.hash2 = bytearray(2)
         self._signature:SignatureField = OpaqueSignature()
 
