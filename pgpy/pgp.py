@@ -55,6 +55,9 @@ from .packet import PrivKey
 from .packet import PubKeyV4
 from .packet import PrivKeyV4
 from .packet import PrivSubKeyV4
+from .packet import PubKeyV6
+from .packet import PrivKeyV6
+from .packet import PrivSubKeyV6
 from .packet import Public
 from .packet import Sub
 from .packet import UserID
@@ -73,6 +76,7 @@ from .packet.packets import PKESessionKey
 from .packet.packets import PKESessionKeyV3
 from .packet.packets import Signature
 from .packet.packets import SignatureV4
+from .packet.packets import SignatureV6
 from .packet.packets import SKEData
 from .packet.packets import Marker
 from .packet.packets import Padding
@@ -341,9 +345,13 @@ class PGPSignature(Armorable, ParentRef, PGPObject):
         sigpkt:Signature
         if created is None:
             created = datetime.now(timezone.utc)
-        sigpkt = SignatureV4()
+        if signer.version == 6:
+            sigpkt = SignatureV6()
+            sigpkt.header.version = 6
+        else:
+            sigpkt = SignatureV4()
+            sigpkt.header.version = 4
         sigpkt.header.tag = 2
-        sigpkt.header.version = 4
         sigpkt.subpackets.addnew('CreationTime', critical=True, hashed=True, created=created)
         keyid:Optional[KeyID] = None
         if signer.version <= 4:
@@ -411,6 +419,13 @@ class PGPSignature(Armorable, ParentRef, PGPObject):
         h.update(othersig._signature.canonical_bytes())
         return h.finalize() in self.attested_certifications
 
+    def _get_key_length_prefix(self, keylen:int) -> bytes:
+        if self._signature.header.version == 4:
+            return b'\x99' + self.int_to_bytes(keylen, 2)
+        elif self._signature.header.version == 6:
+            return b'\x9b' + self.int_to_bytes(keylen, 4)
+        raise ValueError(f"cannot assemble key length prefix from version {self._signature.header.version}")
+
     def hashdata(self, subject):
         _data = bytearray()
 
@@ -419,6 +434,9 @@ class PGPSignature(Armorable, ParentRef, PGPObject):
                 subject = subject.encode('utf-8')
             except UnicodeEncodeError:
                 subject = subject.encode('charmap')
+
+        if self._signature.header.version == 6:
+            _data += self._signature.salt
 
         """
         All signatures are formed by producing a hash over the signature
@@ -465,7 +483,7 @@ class PGPSignature(Armorable, ParentRef, PGPObject):
                 _s = subject.hashdata
 
             if len(_s) > 0:
-                _data += b'\x99' + self.int_to_bytes(len(_s), 2) + _s
+                _data += self._get_key_length_prefix(len(_s)) + _s
 
         if self.type in {SignatureType.Subkey_Binding, SignatureType.PrimaryKey_Binding}:
             """
@@ -480,7 +498,7 @@ class PGPSignature(Armorable, ParentRef, PGPObject):
             else:
                 _s = subject.hashdata
 
-            _data += b'\x99' + self.int_to_bytes(len(_s), 2) + _s
+            _data += self._get_key_length_prefix(len(_s)) + _s
 
         if self.type in {SignatureType.KeyRevocation, SignatureType.SubkeyRevocation, SignatureType.DirectlyOnKey}:
             """
@@ -513,10 +531,10 @@ class PGPSignature(Armorable, ParentRef, PGPObject):
             if self.type == SignatureType.SubkeyRevocation:
                 # hash the primary key first if this is a Subkey Revocation signature
                 _s = subject.parent.hashdata
-                _data += b'\x99' + self.int_to_bytes(len(_s), 2) + _s
+                _data += self._get_key_length_prefix(len(_s)) + _s
 
             _s = subject.hashdata
-            _data += b'\x99' + self.int_to_bytes(len(_s), 2) + _s
+            _data += self._get_key_length_prefix(len(_s)) + _s
 
         if self.type in {SignatureType.Generic_Cert, SignatureType.Persona_Cert, SignatureType.Casual_Cert,
                          SignatureType.Positive_Cert, SignatureType.CertRevocation}:
@@ -574,8 +592,10 @@ class PGPSignature(Armorable, ParentRef, PGPObject):
         hcontext += self._signature.subpackets.__hashbytearray__()
         hlen = len(hcontext)
         _data += hcontext
-        _data += b'\x04\xff'
-        _data += self.int_to_bytes(hlen, 4)
+        _data.append(self._signature.header.version)
+        _data.append(0xff)
+        if self._signature.header.version in [4, 6]:
+            _data += self.int_to_bytes(hlen%(2**32), 4)
         return bytes(_data)
 
     def make_onepass(self) -> OnePassSignature:
@@ -1621,7 +1641,7 @@ class PGPKey(Armorable, ParentRef, PGPObject):
                 yield sig.revocation_key
 
     @classmethod
-    def new(cls, key_algorithm, key_size, created=None):
+    def new(cls, key_algorithm, key_size, created=None, version=4):
         """
         Generate a new PGP key
 
@@ -1643,7 +1663,12 @@ class PGPKey(Armorable, ParentRef, PGPObject):
             key_algorithm = PubKeyAlgorithm.RSAEncryptOrSign
 
         # generate some key data to match key_algorithm and key_size
-        key._key = PrivKeyV4.new(key_algorithm, key_size, created=created)
+        if version == 4:
+            key._key = PrivKeyV4.new(key_algorithm, key_size, created=created)
+        elif version == 6:
+            key._key = PrivKeyV6.new(key_algorithm, key_size, created=created)
+        else:
+            raise ValueError(f"Requested key version {version}, only know how to make v4 or v6 keys")
 
         return key
 
@@ -1951,7 +1976,10 @@ class PGPKey(Armorable, ParentRef, PGPObject):
                 raise PGPError("Cannot add a key that already has subkeys as a subkey!")
 
             # convert key into a subkey
-            npk = PrivSubKeyV4()
+            if key._key.__ver__ == 6:
+                npk = PrivSubKeyV6()
+            else:
+                npk = PrivSubKeyV4()
             npk.pkalg = key._key.pkalg
             npk.created = key._key.created
             npk.keymaterial = key._key.keymaterial
@@ -2061,8 +2089,15 @@ class PGPKey(Armorable, ParentRef, PGPObject):
             sig._signature.sigtype = SignatureType.Standalone
 
         if prefs.pop('include_issuer_fingerprint', True):
-            if isinstance(self._key, PrivKeyV4):
-                sig._signature.subpackets.addnew('IssuerFingerprint', hashed=True, _version=4, _fpr=self.fingerprint)
+            if isinstance(self._key, (PrivKeyV4,PrivKeyV6)):
+                sig._signature.subpackets.addnew('IssuerFingerprint', hashed=True, _version=self._key.__ver__, _fpr=self.fingerprint)
+
+        salt = prefs.pop('salt', None)
+        if salt:
+            if isinstance(sig._signature, SignatureV6):
+                sig._signature.salt = salt
+            else:
+                warnings.warn(f"offered a salt for a signature that is not v6 ({type(sig._signature)})")
 
         # place the subpackets in order by the subpacket type identifier octet
         sig._signature.subpackets._normalize()

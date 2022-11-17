@@ -1339,16 +1339,23 @@ class String2Key(Field):
         self._specifier:S2KSpecifier = S2KSpecifier()
         self._iv = None
 
-    def __bytearray__(self) -> bytearray:
+    def __bytearray__(self, keyversion:int=4) -> bytearray:
         _bytes = bytearray()
         _bytes.append(self.usage)
         if bool(self):
-            _bytes.append(self.encalg)
+            conditionals = bytearray()
+            conditionals.append(self.encalg)
             if self.usage == S2KUsage.AEAD:
-                _bytes.append(self.aead_mode)
-            _bytes += self._specifier.__bytearray__()
+                conditionals.append(self.aead_mode)
+            s2kbytes = self._specifier.__bytearray__()
+            if keyversion == 6 and self.usage in [S2KUsage.MalleableCFB, S2KUsage.CFB, S2KUsage.AEAD]:
+                conditionals.append(len(s2kbytes))
+            conditionals += s2kbytes
             if self.iv is not None:
-                _bytes += self.iv
+                conditionals += self.iv
+            if keyversion == 6:
+                _bytes.append(len(conditionals))
+            _bytes += conditionals
         return _bytes
 
     def __len__(self) -> int:
@@ -1499,18 +1506,18 @@ class PrivKey(PubKey):
         for field in self.__privfields__:
             _bytes += getattr(self, field).to_mpibytes()
 
-    def __bytearray__(self):
+    def __bytearray__(self, keyversion=6): # FIXME: how do we get the keyversion parameter to be passed in here when otherwise there's no knowledge about versioning?
         _bytes = bytearray()
         _bytes += super(PrivKey, self).__bytearray__()
 
-        _bytes += self.s2k.__bytearray__()
+        _bytes += self.s2k.__bytearray__(keyversion)
         if self.s2k:
             _bytes += self.encbytes
 
         else:
             self._append_private_fields(_bytes)
 
-        if self.s2k.usage == S2KUsage.Unprotected:
+        if self.s2k.usage == S2KUsage.Unprotected and keyversion == 4: # checksum is only appropriate for v4 keys:
             _bytes += self.chksum
 
         return _bytes
