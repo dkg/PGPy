@@ -88,9 +88,9 @@ class HashAlgorithm(IntEnum):
     SHA384 = 0x09
     SHA512 = 0x0A
     SHA224 = 0x0B
-    #SHA3_256 = 13
-    #SHA3_384 = 14
-    #SHA3_512 = 15
+    SHA3_256 = 12
+    _reserved_5 = 13
+    SHA3_512 = 14
 
     @property
     def hasher(self) -> hashes.Hash:
@@ -110,7 +110,8 @@ class HashAlgorithm(IntEnum):
 
     @property
     def is_collision_resistant(self) -> bool:
-        return self in {HashAlgorithm.SHA256, HashAlgorithm.SHA384, HashAlgorithm.SHA512}
+        return self in {HashAlgorithm.SHA256, HashAlgorithm.SHA384, HashAlgorithm.SHA512,
+                        HashAlgorithm.SHA3_256, HashAlgorithm.SHA3_512}
 
     @property
     def is_considered_secure(self) -> SecurityIssues:
