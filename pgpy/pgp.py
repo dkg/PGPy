@@ -1915,17 +1915,23 @@ class PGPKey(Armorable, ParentRef, PGPObject):
 
     def _get_key_flags(self, user=None):
         if self.is_primary:
+            # RFC 4880 says that primary keys *must* be capable of certification
+            flags = KeyFlags.Certify
+            # add flags from the most recent direct key signature
+            selfsig = self.latest_self_sig
+            if selfsig is not None and selfsig.key_flags is not None:
+                flags |= selfsig.key_flags
+
             if user is not None:
                 user = self.get_uid(user)
 
             elif len(self._uids) == 0:
-                return {KeyFlags.Certify}
+                return flags
 
             else:
                 user = next(iter(self.userids))
 
-            # RFC 4880 says that primary keys *must* be capable of certification
-            return KeyFlags.Certify | (user.selfsig.key_flags if user.selfsig and user.selfsig.key_flags is not None else KeyFlags(0))
+            return flags | (user.selfsig.key_flags if user.selfsig and user.selfsig.key_flags is not None else KeyFlags(0))
 
         return next(self.self_signatures).key_flags
 
