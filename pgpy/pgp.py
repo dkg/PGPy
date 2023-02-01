@@ -1953,7 +1953,15 @@ class PGPKey(Armorable, ParentRef, PGPObject):
                 uid = next(iter(self.parent.userids), None)
 
         if sig.hash_algorithm is None:
-            sig._signature.halg = next((h for h in uid.selfsig.hashprefs if h.is_supported), HashAlgorithm.SHA256)
+            default_halg = HashAlgorithm.SHA256
+
+            selfsig = self.latest_self_sig
+            if selfsig is not None:
+                default_halg = next((h for h in selfsig.hashprefs if h.is_supported), default_halg)
+
+            if uid is not None:
+                default_halg = next((h for h in uid.selfsig.hashprefs if h.is_supported), default_halg)
+            sig._signature.halg = default_halg
 
         if uid is not None and sig.hash_algorithm not in uid.selfsig.hashprefs:
             warnings.warn("Selected hash algorithm not in key preferences", stacklevel=4)
