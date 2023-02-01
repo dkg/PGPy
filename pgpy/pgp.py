@@ -1544,6 +1544,12 @@ class PGPKey(Armorable, ParentRef, PGPObject):
         self._sibling = weakref.ref(pubkey)
         pubkey._sibling = weakref.ref(self)
 
+
+    @property
+    def latest_self_sig(self):
+        # TODO: filter out self-sigs from the future?
+        return max(self.self_signatures, default=None, key=lambda sig: sig.created)
+
     @property
     def self_signatures(self):
         keyid, keytype = (self.fingerprint.keyid, SignatureType.DirectlyOnKey) if self.is_primary \
