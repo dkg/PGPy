@@ -333,7 +333,15 @@ class PGPSignature(Armorable, ParentRef, PGPObject):
         sigpkt.header.tag = 2
         sigpkt.header.version = 4
         sigpkt.subpackets.addnew('CreationTime', hashed=True, created=created)
-        sigpkt.subpackets.addnew('Issuer', _issuer=signer)
+        keyid = None
+        if not isinstance(signer, Fingerprint) and len(signer) == 16:
+            keyid = signer
+        if isinstance(signer, Fingerprint) and len(signer) == 40:
+            keyid = signer.keyid
+        if keyid is not None and sigpkt.header.version <= 4:
+            sigpkt.subpackets.addnew('Issuer', _issuer=keyid)
+        if isinstance(signer, (Fingerprint)) or isinstance(signer, str) and len(signer) >= 40:
+            sigpkt.subpackets.addnew('IssuerFingerprint', issuer_fingerprint=signer)
 
         sigpkt.sigtype = sigtype
         sigpkt.pubalg = pkalg
