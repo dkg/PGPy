@@ -925,12 +925,12 @@ class IssuerFingerprint(Signature):
 
     @issuer_fingerprint.register(bytearray)
     def issuer_fingerprint_bytearray(self, val):
-        self.issuer_fingerprint = ''.join('{:02x}'.format(c) for c in val).upper()
+        self.issuer_fingerprint = Fingerprint(''.join('{:02x}'.format(c) for c in val).upper())
 
     def __init__(self):
         super(IssuerFingerprint, self).__init__()
         self.version = 4
-        self._issuer_fpr = ""
+        self._issuer_fpr = None
 
     def __bytearray__(self):
         _bytes = super(IssuerFingerprint, self).__bytearray__()
