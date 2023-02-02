@@ -584,6 +584,12 @@ class Issuer(Signature):
     def issuer_set(self, val:Union[bytearray,bytes,str,KeyID,Fingerprint]):
         self._issuer = KeyID(val)
 
+    @issuer.register(Fingerprint)
+    def issuer_Fingerprint(self, val):
+        if len(val) != 40:
+            raise ValueError("Cannot take a key ID of anything other than a v4 fingerprint")
+        self._issuer = val.keyid
+
     def __init__(self):
         super(Issuer, self).__init__()
         self.issuer = bytearray(b'\x00'*8)
