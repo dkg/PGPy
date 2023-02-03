@@ -703,11 +703,13 @@ class KeyFlags(IntFlag):
 
 
 class Features(IntFlag):
+    SEIPDv1 = 0x01
+    # alias (the old name, in RFC 4880):
     ModificationDetection = 0x01
 
     @classproperty
     def pgpy_features(cls) -> "Features":
-        return Features.ModificationDetection
+        return Features.SEIPDv1
 
 
 class RevocationKeyClass(IntFlag):
