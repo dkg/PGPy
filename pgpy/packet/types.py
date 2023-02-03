@@ -5,7 +5,7 @@ from __future__ import division
 import abc
 import copy
 
-from typing import Optional, Tuple, Union
+from typing import Optional, Tuple, Union, List
 
 from ..constants import PacketTag
 
@@ -18,6 +18,8 @@ from ..types import Fingerprint
 from ..types import Header as _Header
 
 from ..constants import PubKeyAlgorithm
+from ..constants import SymmetricKeyAlgorithm
+from ..constants import AEADMode
 
 __all__ = ['Header',
            'VersionedHeader',
@@ -30,7 +32,9 @@ __all__ = ['Header',
            'Primary',
            'Sub',
            'MPI',
-           'MPIs', ]
+           'MPIs',
+           'AEADCiphersuiteList',
+           ]
 
 
 class Header(_Header):
@@ -305,3 +309,16 @@ class MPIs(Field):
             setattr(pk, m, copy.copy(getattr(self, m)))
 
         return pk
+
+
+class AEADCiphersuiteList(List[Tuple[SymmetricKeyAlgorithm,AEADMode]]):
+    '''a list of AEAD Ciphersuites'''
+    def __init__(self, val:List[Tuple[SymmetricKeyAlgorithm,AEADMode]]=[]):
+        for pair in val:
+            self.append(pair)
+
+    def __bytearray__(self) -> bytes:
+        _bytes = bytearray()
+        for pair in self:
+            _bytes += bytes([pair[0], pair[1]])
+        return _bytes
