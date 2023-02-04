@@ -2169,9 +2169,6 @@ class PGPKey(Armorable, ParentRef, PGPObject):
         usage = prefs.pop('usage', None)
         exportable = prefs.pop('exportable', None)
 
-        if usage is not None:
-            sig._signature.subpackets.addnew('KeyFlags', hashed=True, flags=usage)
-
         if exportable is not None:
             sig._signature.subpackets.addnew('ExportableCertification', hashed=True, bflag=exportable)
 
@@ -2211,6 +2208,9 @@ class PGPKey(Armorable, ParentRef, PGPObject):
 
             if compression_prefs is not None:
                 sig._signature.subpackets.addnew('PreferredCompressionAlgorithms', hashed=True, flags=compression_prefs)
+
+            if usage is not None:
+                sig._signature.subpackets.addnew('KeyFlags', hashed=True, flags=usage)
 
             if keyserver_flags is not None:
                 sig._signature.subpackets.addnew('KeyServerPreferences', hashed=True, flags=keyserver_flags)
