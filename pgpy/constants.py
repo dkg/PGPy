@@ -532,6 +532,12 @@ class String2KeyType(IntEnum):
     Reserved = 2
     Iterated = 3
     GNUExtension = 101
+    @property
+    def salt_length(self) -> int:
+        ks = {String2KeyType.Salted: 8,
+              String2KeyType.Iterated: 8,
+              }
+        return ks.get(self, 0)
 
 
 class S2KGNUExtension(IntEnum):

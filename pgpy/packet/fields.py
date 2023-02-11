@@ -11,6 +11,10 @@ import itertools
 import math
 import os
 
+from typing import Optional, Union, ByteString
+
+from warnings import warn
+
 import collections.abc
 
 from typing import Tuple, Union
@@ -84,6 +88,7 @@ __all__ = ['SubPackets',
            'ECDSAPub',
            'EdDSAPub',
            'ECDHPub',
+           'S2KSpecifier',
            'String2Key',
            'ECKDF',
            'PrivKey',
@@ -679,6 +684,260 @@ class ECDHPub(PubKey):
         self.kdf.parse(packet)
 
 
+class S2KSpecifier(Field):
+    '''
+    Just the S2K specifier and its various options
+
+    FIXME: use polymorphism here instead?
+
+    '''
+    def __init__(self,
+                 s2ktype:String2KeyType = String2KeyType.Iterated,
+                 halg:HashAlgorithm = HashAlgorithm.SHA256,
+                 salt:Optional[ByteString] = None,
+                 iteration_count:int = 65011712, # default to maximum iterations
+                 gnupg_extension:S2KGNUExtension = S2KGNUExtension.NoSecret,
+                 smartcard_serial:Optional[ByteString] = None,
+                 ):
+        if salt is not None:
+            if s2ktype.salt_length == 0:
+                raise ValueError(f"No salt for S2KSpecifier type {s2ktype!r}")
+            elif len(salt) != s2ktype.salt_length:
+                raise ValueError(f"S2KSpecifier salt for {s2ktype!r} must be {s2ktype.salt_length} octets, not {len(salt)}")
+        if smartcard_serial is not None:
+            if s2ktype != String2KeyType.GNUExtension:
+                raise ValueError(f"Smartcard serial number should only be specfied for GNUExtension S2KSpecifier, not {s2ktype!r}")
+            if gnupg_extension != S2KGNUExtension.Smartcard:
+                raise ValueError(f"Smartcard serial number should only be specified with S2KGNUExtension Smartcard, not {gnupg_extension!r}")
+            if len(smartcard_serial) > 16:
+                raise ValueError(f"Smartcard serial number should be 16 octets or less, not {len(smartcard_serial)}")
+        super().__init__()
+        self._specifier:String2KeyType = s2ktype
+        self._halg:HashAlgorithm = halg
+        self._salt:Optional[bytes] = None
+        if salt is not None:
+            self._salt = bytes(salt)
+        self._count = 65011712 # the default!
+        if s2ktype == String2KeyType.Iterated:
+            self.iteration_count = iteration_count
+        self._gnupg_extension:S2KGNUExtension = gnupg_extension
+        self._smartcard_serial:Optional[bytes] = None
+        if smartcard_serial is not None:
+            self.smartcard_serial = bytes(smartcard_serial)
+
+    def __copy__(self) -> "S2KSpecifier":
+        s2k = S2KSpecifier()
+        s2k._specifier = self._specifier
+        s2k._halg = self._halg
+        s2k._salt = copy.copy(self._salt)
+        s2k._count = self._count
+        s2k._gnupg_extension = self._gnupg_extension
+        s2k._smartcard_serial = copy.copy(self._smartcard_serial)
+        return s2k
+
+    @sdproperty
+    def iteration_count(self) -> int:
+        if self._specifier is None:
+            raise ValueError(f"Cannot retrieve iteration count when S2KSpecifier type is unset")
+        if self._specifier != String2KeyType.Iterated:
+            raise ValueError(f"Cannot retrieve iteration count on S2KSpecifier Type {self._specifier!r}")
+        if self._count is None:
+            raise ValueError(f"S2KSpecifier iteration count is unset")
+        return self._count
+
+    @staticmethod
+    def _convert_iteration_count_to_byte(count:int) -> bytes:
+        if count < 1:
+            raise ValueError("Cannot set S2K iteration count below 1")
+        exponent:int = min(21, max(6,math.floor(math.log2(count))-4))
+        mantissa:int = min(31, max(16, count >> exponent))
+        val = (mantissa-16) | ((exponent-6) << 4)
+        return bytes([val])
+    @staticmethod
+    def _convert_iteration_byte_to_count(octet:Union[bytes,bytearray]) -> int:
+        if len(octet) != 1:
+            raise ValueError("expected a single byte")
+        mantissa:int = (octet[0] & 0x0f) + 16
+        exponent:int = (octet[0] >> 4) + 6
+        return mantissa << exponent
+
+    @iteration_count.register
+    def iteration_count_int(self, val:int) -> None:
+        if self._specifier is None:
+            self._specifier = String2KeyType.Iterated
+        if self._specifier != String2KeyType.Iterated:
+            raise ValueError(f"Cannot set iteration count on S2KSpecifier type {self._specifier!r}")
+        f = self._convert_iteration_byte_to_count(self._convert_iteration_count_to_byte(val))
+        if f != val:
+            warn(f"Could not select S2K iteration count {val}, using {f} instead")
+        self._count = f
+
+    @iteration_count.register
+    def iteration_count_octet(self, val:Union[bytes,bytearray]) -> None:
+        self._count = self._convert_iteration_byte_to_count(val)
+
+    @sdproperty
+    def iteration_octet(self) -> Optional[bytes]:
+        if self._specifier != String2KeyType.Iterated or self._count is None:
+            return None
+        return self._convert_iteration_count_to_byte(self._count)
+
+    @sdproperty
+    def halg(self) -> HashAlgorithm:
+        return self._halg
+    @halg.register
+    def halg_set(self, val:Union[HashAlgorithm,int]) -> None:
+        self._halg = HashAlgorithm(val)
+
+    @sdproperty
+    def salt(self) -> bytes:
+        if self._specifier.salt_length == 0:
+            return b''
+        if self._salt is None:
+            self._salt = os.urandom(self._specifier.salt_length)
+        return self._salt
+    @salt.register
+    def salt_bytes(self, val:Union[bytes,bytearray]) -> None:
+        if self._specifier.salt_length == 0:
+            raise ValueError(f"salt cannnot be set for String2KeyType {self._specifier!r}")
+        if len(val) != self._specifier.salt_length:
+            raise ValueError(f"salt for String2KeyType {self._specifier!r} should be {self._specifier.salt_length}, not {len(val)}")
+        self._salt = bytes(val)
+
+    @sdproperty
+    def smartcard_serial(self) -> Optional[bytes]:
+        if self._specifier != String2KeyType.GNUExtension or self._gnupg_extension != S2KGNUExtension.Smartcard:
+            return None
+        return self._smartcard_serial
+    @smartcard_serial.register
+    def smartcard_serial_bytes(self, val:Union[bytes,bytearray]) -> None:
+        if self._specifier != String2KeyType.GNUExtension:
+            raise ValueError(f"smartcard serial number can only be set for String2KeyType GNUExtension, not {self._specifier!r}")
+        if self._gnupg_extension != S2KGNUExtension.Smartcard:
+            raise ValueError(f"smartcard serial number can only be set when S2KGNUExtension is Smartcard, not {self._gnupg_extension!r}")
+        if len(val) > 16:
+            raise ValueError(f"smartcard serial number can only be 16 octets maximum, not {len(val)}")
+        self._smartcard_serial = bytes(val)
+
+    def __bytearray__(self) -> bytearray:
+        _bytes = bytearray()
+        _bytes.append(self._specifier)
+        if self._specifier == String2KeyType.GNUExtension:
+            return self._gnu_bytearray(_bytes)
+        if self._specifier in [String2KeyType.Simple, String2KeyType.Salted, String2KeyType.Iterated]:
+            _bytes.append(self._halg)
+        _bytes += self.salt
+        if self._specifier == String2KeyType.Iterated:
+            _bytes += self.iteration_octet
+        return _bytes
+
+    def __len__(self) -> int:
+        return len(self.__bytearray__())
+
+    def parse(self, packet) -> None:
+        self._specifier = String2KeyType(packet[0])
+        del packet[0]
+
+        if self._specifier == String2KeyType.GNUExtension:
+            return self._parse_gnu_extension(packet)
+
+        if self._specifier in [String2KeyType.Simple, String2KeyType.Salted, String2KeyType.Iterated]:
+            self._halg = HashAlgorithm(packet[0])
+            del packet[0]
+
+        if self._specifier.salt_length > 0:
+            self._salt = bytes(packet[:self._specifier.salt_length])
+            del packet[:self._specifier.salt_length]
+
+        if self._specifier == String2KeyType.Iterated:
+            self.iteration_count = packet[:1]
+            del packet[:1]
+
+    def _gnu_bytearray(self, _bytes):
+        if self._specifier != String2KeyType.GNUExtension:
+            raise ValueError(f"This is not a GnuPG-extended S2K specifier ({self._specifier})")
+        if self._gnupg_extension is None:
+            raise ValueError(f"S2KGNUExtension is unset")
+        _bytes += b'\x00GNU'
+        _bytes.append(self._gnupg_extension)
+        if self._gnupg_extension == S2KGNUExtension.Smartcard:
+            if self._smartcard_serial is None:
+                _bytes.append(0)
+            else:
+                _bytes.append(len(self._smartcard_serial))
+                _bytes += self._smartcard_serial
+        return _bytes
+
+    def _parse_gnu_extension(self, packet) -> None:
+        """
+        https://git.gnupg.org/cgi-bin/gitweb.cgi?p=gnupg.git;a=blob;f=doc/DETAILS;h=3046523da62c576cf6a765a8b0829876cfdc6b3b;hb=b0f0791e4ade845b2a0e2a94dbda4f3bf1ceb039#l1346
+
+        GNU extensions to the S2K algorithm
+
+        1 octet  - S2K Specifier: 101
+        4 octets - "\x00GNU"
+        1 octet  - GNU S2K Extension Number.
+
+        If such a GNU extension is used neither an IV nor any kind of
+        checksum is used.  The defined GNU S2K Extension Numbers are:
+
+        - 1 :: Do not store the secret part at all.  No specific data
+               follows.
+
+        - 2 :: A stub to access smartcards.  This data follows:
+               - One octet with the length of the following serial number.
+               - The serial number. Regardless of what the length octet
+                 indicates no more than 16 octets are stored.
+        """
+        if self._specifier != String2KeyType.GNUExtension:
+            raise ValueError(f"This is not a GnuPG-extended S2K specifier ({self._specifier})")
+        if packet[:4] != b'\x00GNU':
+            raise PGPError("Invalid S2K GNU extension magic value")
+        del packet[:4]
+
+        self._gnupg_extension = S2KGNUExtension(packet[0])
+        del packet[0]
+
+        if self._gnupg_extension == S2KGNUExtension.Smartcard:
+            slen = min(packet[0], 16)
+            del packet[0]
+            self.smartcard_serial = packet[:slen]
+            del packet[:slen]
+
+    def derive_key(self, passphrase:Union[str,bytes], keylen_bits:int) -> bytes:
+        if self._specifier not in [String2KeyType.Simple, String2KeyType.Salted, String2KeyType.Iterated]:
+            raise NotImplementedError(f"Cannot derive key from S2KSpecifier {self._specifier}")
+
+        if not isinstance(passphrase, bytes):
+            passphrase = passphrase.encode('utf-8')
+
+
+        hashlen = self._halg.digest_size * 8
+
+        ctx = int(math.ceil((keylen_bits / hashlen)))
+
+        base_count = len(self.salt + passphrase)
+        count = base_count
+        if self._specifier == String2KeyType.Iterated and self._count > count:
+            count = self._count
+
+        hcount = (count // base_count)
+        hleft = count - (hcount * base_count)
+
+        h = []
+        for i in range(0, ctx):
+            _h = self._halg.hasher
+            _h.update(b'\x00' * i)
+            for _ in range(0, hcount):
+                _h.update(self.salt + passphrase)
+            if hleft:
+                _h.update((self.salt + passphrase)[:hleft])
+            h.append(_h)
+
+        # and return the key!
+        return b''.join(hc.digest() for hc in h)[:(keylen_bits // 8)]
+
+
 class String2Key(Field):
     """
     3.7.  String-to-Key (S2K) Specifiers
@@ -785,121 +1044,94 @@ class String2Key(Field):
     context(s) as with the other S2K algorithms.
     """
     @sdproperty
-    def encalg(self):
+    def encalg(self) -> Optional[SymmetricKeyAlgorithm]:
         return self._encalg
 
-    @encalg.register(int)
-    @encalg.register(SymmetricKeyAlgorithm)
-    def encalg_int(self, val):
-        self._encalg = SymmetricKeyAlgorithm(val)
+    @encalg.register
+    def encalg_int(self, val:Union[int,SymmetricKeyAlgorithm]):
+        self._encalg:Optional[SymmetricKeyAlgorithm] = SymmetricKeyAlgorithm(val)
 
     @sdproperty
-    def specifier(self):
-        return self._specifier
+    def specifier(self) -> Optional[String2KeyType]:
+        return self._specifier._specifier
 
-    @specifier.register(int)
-    @specifier.register(String2KeyType)
-    def specifier_int(self, val):
-        self._specifier = String2KeyType(val)
-
-    @sdproperty
-    def gnuext(self):
-        return self._gnuext
-
-    @gnuext.register(int)
-    @gnuext.register(S2KGNUExtension)
-    def gnuext_int(self, val):
-        self._gnuext = S2KGNUExtension(val)
+    @specifier.register
+    def specifier_int(self, val:Union[int,String2KeyType]):
+        self._specifier._specifier = String2KeyType(val)
 
     @sdproperty
-    def halg(self):
-        return self._halg
-
-    @halg.register(int)
-    @halg.register(HashAlgorithm)
-    def halg_int(self, val):
-        self._halg = HashAlgorithm(val)
+    def salt(self) -> bytes:
+        return self._specifier.salt
+    @salt.register
+    def salt_bytes(self, val:Union[bytes,bytearray]) -> None:
+        self._specifier.salt = val
 
     @sdproperty
-    def count(self):
-        return (16 + (self._count & 15)) << ((self._count >> 4) + 6)
+    def gnuext(self) -> Optional[S2KGNUExtension]:
+        return self._specifier._gnupg_extension
 
-    @count.register(int)
-    def count_int(self, val):
+    @gnuext.register
+    def gnuext_int(self, val:Union[int,S2KGNUExtension]):
+        self._specifier._gnupg_extension = S2KGNUExtension(val)
+
+    @sdproperty
+    def scserial(self) -> Optional[bytes]:
+        return self._specifier.smartcard_serial
+    @scserial.register
+    def scserial_bytes(self, val:Union[bytes,bytearray]) -> None:
+        self._specifier.smartcard_serial = val
+
+    @sdproperty
+    def halg(self) -> Optional[HashAlgorithm]:
+        return self._specifier._halg
+
+    @halg.register
+    def halg_int(self, val:Union[int,HashAlgorithm]):
+        self._specifier._halg = HashAlgorithm(val)
+
+    @sdproperty
+    def count(self) -> int:
+        return self._specifier.iteration_count
+
+    @count.register
+    def count_int(self, val:int):
         if val < 0 or val > 255:  # pragma: no cover
             raise ValueError("count must be between 0 and 256")
-        self._count = val
+        self._specifier.iteration_count = bytes([val])
 
-    def __init__(self):
-        super(String2Key, self).__init__()
-        self.usage = 0
-        self.encalg = 0
-        self.specifier = 0
-        self.iv = None
+    def __init__(self) -> None:
+        super().__init__()
+        self.usage:int = 0
+        self._encalg = None
+        self._specifier:S2KSpecifier = S2KSpecifier()
+        self.iv:Optional[bytearray] = None
 
-        # specifier-specific fields
-        # simple, salted, iterated
-        self.halg = 0
-
-        # salted, iterated
-        self.salt = bytearray()
-
-        # iterated
-        self.count = 0
-
-        # GNU extension default type: ignored if specifier != GNUExtension
-        self.gnuext = 1
-
-        # GNU extension smartcard
-        self.scserial = None
-
-    def __bytearray__(self):
+    def __bytearray__(self) -> bytearray:
         _bytes = bytearray()
         _bytes.append(self.usage)
         if bool(self):
             _bytes.append(self.encalg)
-            _bytes.append(self.specifier)
-            if self.specifier == String2KeyType.GNUExtension:
-                return self._experimental_bytearray(_bytes)
-            if self.specifier >= String2KeyType.Simple:
-                _bytes.append(self.halg)
-            if self.specifier >= String2KeyType.Salted:
-                _bytes += self.salt
-            if self.specifier == String2KeyType.Iterated:
-                _bytes.append(self._count)
+            _bytes += self._specifier.__bytearray__()
             if self.iv is not None:
                 _bytes += self.iv
         return _bytes
 
-    def _experimental_bytearray(self, _bytes):
-        if self.specifier == String2KeyType.GNUExtension:
-            _bytes += b'\x00GNU'
-            _bytes.append(self.gnuext)
-            if self.scserial:
-                _bytes.append(len(self.scserial))
-                _bytes += self.scserial
-        return _bytes
-
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.__bytearray__())
 
-    def __bool__(self):
+    def __bool__(self) -> bool:
         return self.usage in [254, 255]
 
-    def __copy__(self):
+    def __copy__(self) -> "String2Key":
         s2k = String2Key()
         s2k.usage = self.usage
-        s2k.encalg = self.encalg
-        s2k.specifier = self.specifier
-        s2k.gnuext = self.gnuext
+        if self._encalg is not None:
+            s2k._encalg = self._encalg
+        s2k._specifier = copy.copy(self._specifier)
         s2k.iv = self.iv
-        s2k.halg = self.halg
-        s2k.salt = copy.copy(self.salt)
-        s2k.count = self._count
-        s2k.scserial = self.scserial
         return s2k
 
-    def parse(self, packet, iv=True):
+    def parse(self, packet, iv=True) -> None:
         self.usage = packet[0]
         del packet[0]
 
@@ -907,106 +1139,17 @@ class String2Key(Field):
             self.encalg = packet[0]
             del packet[0]
 
-            self.specifier = packet[0]
-            del packet[0]
-
-            if self.specifier == String2KeyType.GNUExtension:
-                return self._experimental_parse(packet, iv)
-
-            if self.specifier >= String2KeyType.Simple:
-                # this will always be true
-                self.halg = packet[0]
-                del packet[0]
-
-            if self.specifier >= String2KeyType.Salted:
-                self.salt = packet[:8]
-                del packet[:8]
-
-            if self.specifier == String2KeyType.Iterated:
-                self.count = packet[0]
-                del packet[0]
-
-            if iv:
+            self._specifier.parse(packet)
+            if self.encalg is not None and self.encalg != SymmetricKeyAlgorithm.Plaintext and iv:
                 self.iv = packet[:(self.encalg.block_size // 8)]
                 del packet[:(self.encalg.block_size // 8)]
 
-    def _experimental_parse(self, packet, iv=True):
-        """
-        https://git.gnupg.org/cgi-bin/gitweb.cgi?p=gnupg.git;a=blob;f=doc/DETAILS;h=3046523da62c576cf6a765a8b0829876cfdc6b3b;hb=b0f0791e4ade845b2a0e2a94dbda4f3bf1ceb039#l1346
-
-        GNU extensions to the S2K algorithm
-
-        1 octet  - S2K Usage: either 254 or 255.
-        1 octet  - S2K Cipher Algo: 0
-        1 octet  - S2K Specifier: 101
-        4 octets - "\x00GNU"
-        1 octet  - GNU S2K Extension Number.
-
-        If such a GNU extension is used neither an IV nor any kind of
-        checksum is used.  The defined GNU S2K Extension Numbers are:
-
-        - 1 :: Do not store the secret part at all.  No specific data
-               follows.
-
-        - 2 :: A stub to access smartcards.  This data follows:
-               - One octet with the length of the following serial number.
-               - The serial number. Regardless of what the length octet
-                 indicates no more than 16 octets are stored.
-        """
-        if self.specifier == String2KeyType.GNUExtension:
-            if packet[:4] != b'\x00GNU':
-                raise PGPError("Invalid S2K GNU extension magic value")
-            del packet[:4]
-            self.gnuext = packet[0]
-            del packet[0]
-
-            if self.gnuext == S2KGNUExtension.Smartcard:
-                slen = min(packet[0], 16)
-                del packet[0]
-                self.scserial = packet[:slen]
-                del packet[:slen]
-
-    def derive_key(self, passphrase):
-        ##TODO: raise an exception if self.usage is not 254 or 255
-        keylen = self.encalg.key_size
-        hashlen = self.halg.digest_size * 8
-
-        ctx = int(math.ceil((keylen / hashlen)))
-
-        # Simple S2K - always done
-        hsalt = b''
-        if isinstance(passphrase, bytes):
-            hpass = passphrase
-        else:
-            hpass = passphrase.encode('utf-8')
-
-        # salted, iterated S2K
-        if self.specifier >= String2KeyType.Salted:
-            hsalt = bytes(self.salt)
-
-        count = len(hsalt + hpass)
-        if self.specifier == String2KeyType.Iterated and self.count > len(hsalt + hpass):
-            count = self.count
-
-        hcount = (count // len(hsalt + hpass))
-        hleft = count - (hcount * len(hsalt + hpass))
-
-        hashdata = ((hsalt + hpass) * hcount) + (hsalt + hpass)[:hleft]
-
-        h = []
-        for i in range(0, ctx):
-            _h = self.halg.hasher
-            _h.update(b'\x00' * i)
-            _h.update(hashdata)
-            h.append(_h)
-
-        # GC some stuff
-        del hsalt
-        del hpass
-        del hashdata
-
-        # and return the key!
-        return b''.join(hc.digest() for hc in h)[:(keylen // 8)]
+    def derive_key(self, passphrase) -> bytes:
+        if self.usage not in [254,255]:
+            raise ValueError(f"can only derive key from String2Key object when usage octet is 254 or 255, not {self.usage}")
+        if self.encalg is None:
+            raise ValueError("cannot derive key from String2Key object when encalg is unset")
+        return self._specifier.derive_key(passphrase, self.encalg.key_size)
 
 
 class ECKDF(Field):
