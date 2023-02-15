@@ -45,7 +45,6 @@ class Armorable(metaclass=abc.ABCMeta):
     __armor_fmt = '-----BEGIN PGP {block_type}-----\n' \
                   '{headers}\n' \
                   '{packet}\n' \
-                  '={crc}\n' \
                   '-----END PGP {block_type}-----\n'
 
     # the re.VERBOSE flag allows for:
@@ -215,8 +214,7 @@ class Armorable(metaclass=abc.ABCMeta):
         return self.__armor_fmt.format(
             block_type=self.magic,
             headers=''.join('{key}: {val}\n'.format(key=key, val=val) for key, val in self.ascii_headers.items()),
-            packet=payload,
-            crc=base64.b64encode(PGPObject.int_to_bytes(self.crc24(self.__bytes__()), 3)).decode('latin-1')
+            packet=payload
         )
 
     def __copy__(self):
