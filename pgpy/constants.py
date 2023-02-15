@@ -379,6 +379,7 @@ class PacketTag(IntEnum):
     UserAttribute = 17
     SymmetricallyEncryptedIntegrityProtectedData = 18
     ModificationDetectionCode = 19
+    Padding = 21
 
 
 class AEADMode(IntEnum):

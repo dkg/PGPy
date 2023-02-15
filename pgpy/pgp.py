@@ -75,6 +75,7 @@ from .packet.packets import Signature
 from .packet.packets import SignatureV4
 from .packet.packets import SKEData
 from .packet.packets import Marker
+from .packet.packets import Padding
 from .packet.packets import SKESessionKey
 from .packet.packets import SKESessionKeyV4
 from .packet.packets import SKESessionKeyV6
@@ -1044,7 +1045,7 @@ class PGPMessage(Armorable, PGPObject):
                 yield sig
 
     def __or__(self, other):
-        if isinstance(other, Marker):
+        if isinstance(other, (Marker, Padding)):
             return self
 
         if isinstance(other, CompressedData):
@@ -2792,7 +2793,7 @@ class PGPKey(Armorable, ParentRef, PGPObject):
         def _getpkt(d):
             return Packet(d) if d else None
         # some packets are filtered out
-        getpkt = filter(lambda p: p.header.tag != PacketTag.Trust, iter(functools.partial(_getpkt, data), None))
+        getpkt = filter(lambda p: p.header.tag not in [PacketTag.Trust, PacketTag.Padding, PacketTag.Marker], iter(functools.partial(_getpkt, data), None))
 
         def pktgrouper():
             class PktGrouper(object):
