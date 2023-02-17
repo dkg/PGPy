@@ -56,6 +56,8 @@ Requirements
 
 - `Cryptography <https://pypi.python.org/pypi/cryptography>`_
 
+- `argon2_cffi <https://pypi.org/project/argon2-cffi/>`_
+
 License
 -------
 

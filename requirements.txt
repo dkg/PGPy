@@ -1,1 +1,2 @@
+argon2_cffi
 cryptography>=3.3.2
