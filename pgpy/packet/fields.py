@@ -927,11 +927,7 @@ class S2KSpecifier(Field):
         h = []
         for i in range(0, ctx):
             _h = self._halg.hasher
-            _h.update(b'\x00' * i)
-            for _ in range(0, hcount):
-                _h.update(self.salt + passphrase)
-            if hleft:
-                _h.update((self.salt + passphrase)[:hleft])
+            _h.update(b'\x00' * i + (self.salt + passphrase) * hcount + (self.salt + passphrase)[:hleft])
             h.append(_h)
 
         # and return the key!
