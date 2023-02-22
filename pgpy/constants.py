@@ -11,6 +11,8 @@ from enum import Enum
 from enum import IntEnum
 from enum import IntFlag
 
+from types import LambdaType
+
 from pyasn1.type.univ import ObjectIdentifier
 
 from cryptography.hazmat.backends import openssl
@@ -188,10 +190,10 @@ class SymmetricKeyAlgorithm(IntEnum):
 
     @property
     def cipher(self):
-        bs = {SymmetricKeyAlgorithm.IDEA: algorithms.IDEA,
+        bs = {SymmetricKeyAlgorithm.IDEA: lambda: algorithms.IDEA,
               SymmetricKeyAlgorithm.TripleDES: algorithms.TripleDES,
-              SymmetricKeyAlgorithm.CAST5: algorithms.CAST5,
-              SymmetricKeyAlgorithm.Blowfish: algorithms.Blowfish,
+              SymmetricKeyAlgorithm.CAST5: lambda: algorithms.CAST5,
+              SymmetricKeyAlgorithm.Blowfish: lambda: algorithms.Blowfish,
               SymmetricKeyAlgorithm.AES128: algorithms.AES,
               SymmetricKeyAlgorithm.AES192: algorithms.AES,
               SymmetricKeyAlgorithm.AES256: algorithms.AES,
@@ -201,6 +203,13 @@ class SymmetricKeyAlgorithm(IntEnum):
               SymmetricKeyAlgorithm.Camellia256: algorithms.Camellia}
 
         if self in bs:
+            # IDEA, CAST5, and Blowfish are all deprecated by
+            # cryptography they should not be instantiated unless
+            # they're necessary to actually be used.  If that's the
+            # case, then it's appropriate to emit a
+            # CryptographyDeprecationWarning.
+            if isinstance(bs[self], LambdaType):
+                return bs[self]()
             return bs[self]
 
         raise NotImplementedError(repr(self))
