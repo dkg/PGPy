@@ -10,7 +10,7 @@ import itertools
 import math
 import os
 
-from typing import Optional, Union, ByteString, Type
+from typing import Optional, Union, ByteString, Type, Tuple
 
 from warnings import warn
 
@@ -34,7 +34,10 @@ from cryptography.hazmat.primitives.asymmetric import ed25519
 from cryptography.hazmat.primitives.asymmetric import ed448
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.asymmetric import x25519
+from cryptography.hazmat.primitives.asymmetric import x448
 from cryptography.hazmat.primitives.asymmetric import utils
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from cryptography.hazmat.primitives.hashes import SHA256, SHA512, HashAlgorithm as cryptography_HashAlgorithm
 
 from cryptography.hazmat.primitives.kdf.concatkdf import ConcatKDFHash
 
@@ -96,12 +99,17 @@ __all__ = ['SubPackets',
            'Ed25519Pub',
            'Ed448Pub',
            'ECDHPub',
+           'X25519Pub',
+           'X448Pub',
            'S2KSpecifier',
            'String2Key',
            'ECKDF',
            'NativeEdDSAPub',
            'NativeEdDSAPriv',
            'NativeEdDSASignature',
+           'NativeCFRGXPriv',
+           'NativeCFRGXPub',
+           'NativeCFRGXCipherText',
            'PrivKey',
            'OpaquePrivKey',
            'RSAPriv',
@@ -112,10 +120,15 @@ __all__ = ['SubPackets',
            'Ed25519Priv',
            'Ed448Priv',
            'ECDHPriv',
+           'X25519Priv',
+           'X448Priv',
            'CipherText',
            'RSACipherText',
            'ElGCipherText',
-           'ECDHCipherText', ]
+           'ECDHCipherText',
+           'X25519CipherText',
+           'X448CipherText',
+           ]
 
 
 class SubPackets(collections.abc.MutableMapping, Field):
@@ -777,6 +790,46 @@ class ECDHPub(PubKey):
         elif self.p.format != ECPointFormat.Standard:
             raise PGPIncompatibleECPointFormatError("Only Standard format is valid for this curve")
         self.kdf.parse(packet)
+
+
+class NativeCFRGXPub(PubKey):
+    @abc.abstractproperty
+    def _public_length(self) -> int:
+        'the size of this native CFRG X* public key object'
+    @abc.abstractproperty
+    def _native_type(self) -> Union[Type[x25519.X25519PublicKey], Type[x448.X448PublicKey]]:
+        'what is the native type to use?'
+
+    def __pubkey__(self) -> Union[x25519.X25519PublicKey, x448.X448PublicKey]:
+        return self._raw_pubkey
+
+    def __bytearray__(self) -> bytearray:
+        return bytearray(self._raw_pubkey.public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw))
+
+    def parse(self, packet:bytearray) -> None:
+        self._raw_pubkey = self._native_type.from_public_bytes(bytes(packet[:self._public_length]))
+        del packet[:self._public_length]
+
+    def __len__(self) -> int:
+        return self._public_length
+
+class X25519Pub(NativeCFRGXPub):
+    __pubkey_algo__ = PubKeyAlgorithm.X25519
+    @property
+    def _public_length(self) -> int:
+        return 32
+    @property
+    def _native_type(self) -> Union[Type[x25519.X25519PublicKey], Type[x448.X448PublicKey]]:
+        return x25519.X25519PublicKey
+
+class X448Pub(NativeCFRGXPub):
+    __pubkey_algo__ = PubKeyAlgorithm.X448
+    @property
+    def _public_length(self) -> int:
+        return 56
+    @property
+    def _native_type(self) -> Union[Type[x25519.X25519PublicKey], Type[x448.X448PublicKey]]:
+        return x448.X448PublicKey
 
 
 class S2KSpecifier(Field):
@@ -2069,6 +2122,77 @@ class ECDHPriv(ECDSAPriv, ECDHPub):
     def sign(self, sigdata:bytes, hash_alg:HashAlgorithm) -> bytes:
         raise PGPError("Cannot sign with an ECDH key")
 
+class NativeCFRGXPriv(PrivKey, NativeCFRGXPub):
+    def __privkey__(self) -> Union[x25519.X25519PrivateKey, x448.X448PrivateKey]:
+        return self._raw_privkey
+    def clear(self) -> None:
+        del self._raw_privkey
+    @abc.abstractproperty
+    def _private_length(self) -> int:
+        'the length in byes of the native private key object'
+    @abc.abstractproperty
+    def _native_private_type(self) -> Union[Type[x25519.X25519PrivateKey], Type[x448.X448PrivateKey]]:
+        'the native object type from the cryptography library'
+
+    def _compute_chksum(self):
+        b = bytearray()
+        self._append_private_fields(b)
+        chs = sum(b) % 65536
+        self.chksum = bytearray(self.int_to_bytes(chs, 2))
+
+    def _generate(self, keysize:Optional[Union[int,EllipticCurveOID]]=None) -> None:
+        if keysize is not None:
+            raise ValueError("Native CFRG key exchange ('X*') keys should always receive a None parameter for keysize, as they are fixed length")
+        self._raw_privkey = self._native_private_type.generate()
+        self._raw_pubkey = self._raw_privkey.public_key()
+        self._compute_chksum()
+
+    def parse(self, packet:bytearray) -> None:
+        NativeCFRGXPub.parse(self, packet)
+        # parse s2k business
+        self.s2k.parse(packet)
+
+        if not self.s2k:
+            self._raw_privkey = self._native_private_type.from_private_bytes(packet[:self._private_length])
+            del packet[:self._private_length]
+        else:
+            # FIXME: unpack the encrypted secret parameters!
+            self.encbytes = packet
+
+    def _append_private_fields(self, _bytes:bytearray) -> None:
+        _bytes += self._raw_privkey.private_bytes(encoding=serialization.Encoding.Raw,
+                                                  format=serialization.PrivateFormat.Raw,
+                                                  encryption_algorithm=serialization.NoEncryption())
+
+    def sign(self, sigdata:bytes, hash_alg:HashAlgorithm) -> bytes:
+        raise PGPError("Cannot sign with a CFRG X* key")
+
+    def decrypt_keyblob(self, passphrase):
+        kb = super().decrypt_keyblob(passphrase)
+        del passphrase
+
+        self._raw_privkey = self._native_private_type.from_private_bytes(kb[:self._private_length])
+        del kb[:self._private_length]
+
+        if self.s2k.usage in [254, 255]:
+            self.chksum = kb
+            del kb
+
+class X25519Priv(NativeCFRGXPriv, X25519Pub):
+    @property
+    def _private_length(self) -> int:
+        return 32
+    @property
+    def _native_private_type(self) -> Union[Type[x25519.X25519PrivateKey], Type[x448.X448PrivateKey]]:
+        return x25519.X25519PrivateKey
+
+class X448Priv(NativeCFRGXPriv, X448Pub):
+    @property
+    def _private_length(self) -> int:
+        return 56
+    @property
+    def _native_private_type(self) -> Union[Type[x25519.X25519PrivateKey], Type[x448.X448PrivateKey]]:
+        return x448.X448PrivateKey
 
 class CipherText(MPIs):
     def __init__(self):
@@ -2223,3 +2347,126 @@ class ECDHCipherText(CipherText):
         del packet[0]
         self.c += packet[:clen]
         del packet[:clen]
+
+NativeCFRGXPrivType = Union[x25519.X25519PrivateKey,x448.X448PrivateKey]
+NativeCFRGXPubType = Union[x25519.X25519PublicKey,x448.X448PublicKey]
+
+class NativeCFRGXCipherText(CipherText):
+    @abc.abstractproperty
+    def public_bytes(self) -> int:
+        '''size of public key (in bytes)'''
+    @abc.abstractproperty
+    def aes_keywrap_keylen(self) -> int:
+        '''size of AES key (bytes)'''
+    @abc.abstractproperty
+    def hkdf_info(self) -> bytes:
+        '''the prefix string for key derivation'''
+    @abc.abstractmethod
+    def gen_priv(self) -> NativeCFRGXPrivType:
+        '''generate a private key'''
+    @abc.abstractmethod
+    def pub_from_bytes(self, b:bytes) -> NativeCFRGXPubType:
+        '''derive a public key from bytes'''
+    @abc.abstractmethod
+    def kdf_hash_algo(self) -> cryptography_HashAlgorithm:
+        '''generate a new hash algorithm for use with HKDF'''
+
+    def __init__(self) -> None:
+        self._sym_algo:Optional[SymmetricKeyAlgorithm] = None
+        self._text:Optional[bytes] = None
+        self._ephemeral:Optional[Union[x25519.X25519PublicKey|x448.X448PublicKey]] = None
+
+    @classmethod
+    def encrypt(cls, pk, *args, ephemeral_key:Optional[NativeCFRGXPrivType]=None) -> "NativeCFRGXCipherText":
+        # we only allow the ephemeral key to be passed in as a means of creating reproducible test vectors:
+        ct = cls()
+        if ephemeral_key is None:
+            ephemeral_key = ct.gen_priv()
+
+        peerkey = pk.keymaterial.__pubkey__()
+        shared_secret:bytes = ephemeral_key.exchange(peerkey)
+        cleartext = args[0]
+        hkdf = HKDF(algorithm=ct.kdf_hash_algo(), length=ct.aes_keywrap_keylen, salt=None, info=ct.hkdf_info)
+        peerkey_bytes = peerkey.public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+        ephemeral_bytes = ephemeral_key.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+        key_wrap_key:bytes = hkdf.derive(ephemeral_bytes + peerkey_bytes + shared_secret)
+
+        encrypted = aes_key_wrap(key_wrap_key, cleartext)
+
+        ct._ephemeral = ephemeral_key.public_key()
+        # FIXME: needs to save the symmetric algo for v3 PKESK.  where do we get it from? does it get passed in?
+        ct._sym_algo = None
+        ct._text = encrypted
+        return ct
+
+    def __bytearray__(self, version=6):
+        _bytes = bytearray()
+        _bytes += self._ephemeral.public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+        trailerlen = len(self._text)
+        if version == 3:
+            trailerlen += 1
+        _bytes.append(trailerlen)
+        if version == 3:
+            _bytes.append(int(ct._sym_algo))
+        _bytes += self._text
+        return _bytes
+
+    def parse(self, packet:bytearray, version=6) -> None:
+        self._ephemeral = self.pub_from_bytes(bytes(packet[:self.public_bytes]))
+        del packet[:self.public_bytes]
+        sz = packet[0]
+        del packet[0]
+        if version == 3:
+            self._sym_algo = SymmetricKeyAlgorithm(packet[0])
+            del packet[0]
+            sz =- 1
+        self._text = bytes(packet[:sz])
+        del packet[:sz]
+
+    def decrypt(self, pk, *args) -> Tuple[Optional[SymmetricKeyAlgorithm],bytes]:
+        if self._ephemeral is None or self._text is None:
+            raise PGPDecryptionError(f"Cannot decrypt uninitialized {self.__class__.__name__}")
+        shared_secret:bytes = pk.__privkey__().exchange(self._ephemeral)
+        hkdf = HKDF(algorithm=self.kdf_hash_algo(), length=self.aes_keywrap_keylen, salt=None, info=self.hkdf_info)
+        peerkey_bytes = pk.__privkey__().public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+        ephemeral_bytes = self._ephemeral.public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+        key_wrap_key:bytes = hkdf.derive(ephemeral_bytes + peerkey_bytes + shared_secret)
+        cleartext = aes_key_unwrap(key_wrap_key, self._text)
+
+        # FIXME: if this is PKESKv3, we need to split off the first byte as the symmetric algo
+        # how do we know if it was PKESKv3?
+        return (None, cleartext)
+
+class X25519CipherText(NativeCFRGXCipherText):
+    @property
+    def public_bytes(self) -> int:
+        return 32
+    @property
+    def aes_keywrap_keylen(self) -> int:
+        return 16
+    @property
+    def hkdf_info(self) -> bytes:
+        return b'OpenPGP X25519'
+    def gen_priv(self) -> x25519.X25519PrivateKey:
+        return x25519.X25519PrivateKey.generate()
+    def pub_from_bytes(self, b:bytes) -> x25519.X25519PublicKey:
+        return x25519.X25519PublicKey.from_public_bytes(b)
+    def kdf_hash_algo(self) -> cryptography_HashAlgorithm:
+        return SHA256()
+    
+class X448CipherText(NativeCFRGXCipherText):
+    @property
+    def public_bytes(self) -> int:
+        return 56
+    @property
+    def aes_keywrap_keylen(self) -> int:
+        return 32
+    @property
+    def hkdf_info(self) -> bytes:
+        return b'OpenPGP X448'
+    def gen_priv(self) -> x448.X448PrivateKey:
+        return x448.X448PrivateKey.generate()
+    def pub_from_bytes(self, b:bytes) -> x448.X448PublicKey:
+        return x448.X448PublicKey.from_public_bytes(b)
+    def kdf_hash_algo(self) -> cryptography_HashAlgorithm:
+        return SHA512()

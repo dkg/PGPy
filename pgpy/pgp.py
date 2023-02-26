@@ -1493,6 +1493,8 @@ class PGPKey(Armorable, ParentRef, PGPObject):
             return None
         if self.key_algorithm in {PubKeyAlgorithm.ECDSA, PubKeyAlgorithm.ECDH, PubKeyAlgorithm.EdDSA}:
             return self._key.keymaterial.oid
+        if self.key_algorithm in {PubKeyAlgorithm.Ed25519, PubKeyAlgorithm.Ed448, PubKeyAlgorithm.X25519, PubKeyAlgorithm.X448}:
+            return self._key.keymaterial._public_length * 8
         # check if keymaterial is not an Opaque class containing a bytearray
         param = next(iter(self._key.keymaterial))
         if isinstance(param, bytearray):

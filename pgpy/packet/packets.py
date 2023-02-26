@@ -28,6 +28,8 @@ from .fields import ElGCipherText, ElGPriv, ElGPub
 from .fields import CipherText
 from .fields import Ed25519Pub, Ed25519Priv, Ed25519Signature
 from .fields import Ed448Pub, Ed448Priv, Ed448Signature
+from .fields import X25519Pub, X25519Priv, X25519CipherText
+from .fields import X448Pub, X448Priv, X448CipherText
 from .fields import OpaquePubKey
 from .fields import OpaquePrivKey
 from .fields import OpaqueSignature
@@ -214,7 +216,10 @@ class PKESessionKeyV3(PKESessionKey):
               PubKeyAlgorithm.RSAEncrypt: RSACipherText,
               PubKeyAlgorithm.ElGamal: ElGCipherText,
               PubKeyAlgorithm.FormerlyElGamalEncryptOrSign: ElGCipherText,
-              PubKeyAlgorithm.ECDH: ECDHCipherText}
+              PubKeyAlgorithm.ECDH: ECDHCipherText,
+              PubKeyAlgorithm.X25519: X25519CipherText,
+              PubKeyAlgorithm.X448: X448CipherText,
+              }
 
         ct = _c.get(self._pkalg, None)
         self.ct = ct() if ct is not None else ct
@@ -348,6 +353,8 @@ class PKESessionKeyV6(PKESessionKey):
               PubKeyAlgorithm.RSAEncrypt: RSACipherText,
               PubKeyAlgorithm.FormerlyElGamalEncryptOrSign: ElGCipherText,
               PubKeyAlgorithm.ECDH: ECDHCipherText,
+              PubKeyAlgorithm.X25519: X25519CipherText,
+              PubKeyAlgorithm.X448: X448CipherText,
               }
 
         ct = _c.get(self._pkalg, None)
@@ -1100,6 +1107,8 @@ class PubKey(VersionedPacket, Primary, Public):
             (True, PubKeyAlgorithm.EdDSA): EdDSAPub,
             (True, PubKeyAlgorithm.Ed25519): Ed25519Pub,
             (True, PubKeyAlgorithm.Ed448): Ed448Pub,
+            (True, PubKeyAlgorithm.X25519): X25519Pub,
+            (True, PubKeyAlgorithm.X448): X448Pub,
             # False means private
             (False, PubKeyAlgorithm.RSAEncryptOrSign): RSAPriv,
             (False, PubKeyAlgorithm.RSAEncrypt): RSAPriv,
@@ -1112,6 +1121,8 @@ class PubKey(VersionedPacket, Primary, Public):
             (False, PubKeyAlgorithm.EdDSA): EdDSAPriv,
             (False, PubKeyAlgorithm.Ed25519): Ed25519Priv,
             (False, PubKeyAlgorithm.Ed448): Ed448Priv,
+            (False, PubKeyAlgorithm.X25519): X25519Priv,
+            (False, PubKeyAlgorithm.X448): X448Priv,
         }
 
         k = (self.public, self.pkalg)
@@ -1261,7 +1272,8 @@ class PrivKeyV4(PrivKey, PubKeyV4):
             pk.keymaterial.oid = self.keymaterial.oid
             pk.keymaterial.kdf = copy.copy(self.keymaterial.kdf)
 
-        elif self.pkalg in {PubKeyAlgorithm.Ed25519, PubKeyAlgorithm.Ed448}:
+        elif self.pkalg in {PubKeyAlgorithm.Ed25519, PubKeyAlgorithm.Ed448,
+                            PubKeyAlgorithm.X25519, PubKeyAlgorithm.X448}:
             pk.keymaterial._raw_pubkey = copy.copy(self.keymaterial._raw_pubkey)
 
         pk.update_hlen()
