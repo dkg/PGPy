@@ -1306,6 +1306,11 @@ class PrivKey(PubKey):
         for field in self.__privfields__:
             setattr(self, field, MPI(0))
 
+    def _append_private_fields(self, _bytes:bytearray) -> None:
+        '''override this function if the private fields are not MPIs'''
+        for field in self.__privfields__:
+            _bytes += getattr(self, field).to_mpibytes()
+
     def __bytearray__(self):
         _bytes = bytearray()
         _bytes += super(PrivKey, self).__bytearray__()
@@ -1315,8 +1320,7 @@ class PrivKey(PubKey):
             _bytes += self.encbytes
 
         else:
-            for field in self.__privfields__:
-                _bytes += getattr(self, field).to_mpibytes()
+            self._append_private_fields(_bytes)
 
         if self.s2k.usage == S2KUsage.Unprotected:
             _bytes += self.chksum
@@ -1384,8 +1388,7 @@ class PrivKey(PubKey):
         del passphrase
 
         pt = bytearray()
-        for pf in self.__privfields__:
-            pt += getattr(self, pf).to_mpibytes()
+        self._append_private_fields(pt)
 
         # append a SHA-1 hash of the plaintext so far to the plaintext
         pt += hashlib.new('sha1', pt).digest()
