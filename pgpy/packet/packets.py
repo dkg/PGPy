@@ -26,6 +26,8 @@ from .fields import ECDHPub, ECDHPriv, ECDHCipherText
 from .fields import EdDSAPub, EdDSAPriv, EdDSASignature
 from .fields import ElGCipherText, ElGPriv, ElGPub
 from .fields import CipherText
+from .fields import Ed25519Pub, Ed25519Priv, Ed25519Signature
+from .fields import Ed448Pub, Ed448Priv, Ed448Signature
 from .fields import OpaquePubKey
 from .fields import OpaquePrivKey
 from .fields import OpaqueSignature
@@ -596,6 +598,8 @@ class Signature(VersionedPacket):
             PubKeyAlgorithm.DSA: DSASignature,
             PubKeyAlgorithm.ECDSA: ECDSASignature,
             PubKeyAlgorithm.EdDSA: EdDSASignature,
+            PubKeyAlgorithm.Ed25519: Ed25519Signature,
+            PubKeyAlgorithm.Ed448: Ed448Signature,
         }
 
         self.signature = sigs.get(self.pubalg, OpaqueSignature)()
@@ -1094,6 +1098,8 @@ class PubKey(VersionedPacket, Primary, Public):
             (True, PubKeyAlgorithm.ECDSA): ECDSAPub,
             (True, PubKeyAlgorithm.ECDH): ECDHPub,
             (True, PubKeyAlgorithm.EdDSA): EdDSAPub,
+            (True, PubKeyAlgorithm.Ed25519): Ed25519Pub,
+            (True, PubKeyAlgorithm.Ed448): Ed448Pub,
             # False means private
             (False, PubKeyAlgorithm.RSAEncryptOrSign): RSAPriv,
             (False, PubKeyAlgorithm.RSAEncrypt): RSAPriv,
@@ -1104,6 +1110,8 @@ class PubKey(VersionedPacket, Primary, Public):
             (False, PubKeyAlgorithm.ECDSA): ECDSAPriv,
             (False, PubKeyAlgorithm.ECDH): ECDHPriv,
             (False, PubKeyAlgorithm.EdDSA): EdDSAPriv,
+            (False, PubKeyAlgorithm.Ed25519): Ed25519Priv,
+            (False, PubKeyAlgorithm.Ed448): Ed448Priv,
         }
 
         k = (self.public, self.pkalg)
@@ -1252,6 +1260,9 @@ class PrivKeyV4(PrivKey, PubKeyV4):
         if self.pkalg == PubKeyAlgorithm.ECDH:
             pk.keymaterial.oid = self.keymaterial.oid
             pk.keymaterial.kdf = copy.copy(self.keymaterial.kdf)
+
+        elif self.pkalg in {PubKeyAlgorithm.Ed25519, PubKeyAlgorithm.Ed448}:
+            pk.keymaterial._raw_pubkey = copy.copy(self.keymaterial._raw_pubkey)
 
         pk.update_hlen()
         return pk
