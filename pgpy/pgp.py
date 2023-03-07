@@ -2054,6 +2054,9 @@ class PGPKey(Armorable, ParentRef, PGPObject):
             if isinstance(self._key, PrivKeyV4):
                 sig._signature.subpackets.addnew('IssuerFingerprint', hashed=True, _version=4, _issuer_fpr=self.fingerprint)
 
+        # place the subpackets in order by the subpacket type identifier octet
+        sig._signature.subpackets._normalize()
+
         sigdata = sig.hashdata(subject)
         h2 = sig.hash_algorithm.hasher
         h2.update(sigdata)
