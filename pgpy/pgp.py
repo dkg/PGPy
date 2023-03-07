@@ -337,7 +337,7 @@ class PGPSignature(Armorable, ParentRef, PGPObject):
         sigpkt = SignatureV4()
         sigpkt.header.tag = 2
         sigpkt.header.version = 4
-        sigpkt.subpackets.addnew('CreationTime', hashed=True, created=created)
+        sigpkt.subpackets.addnew('CreationTime', critical=True, hashed=True, created=created)
         keyid = None
         if not isinstance(signer, Fingerprint) and len(signer) == 16:
             keyid = signer
@@ -2244,7 +2244,7 @@ class PGPKey(Armorable, ParentRef, PGPObject):
                 sig._signature.subpackets.addnew('PreferredCompressionAlgorithms', hashed=True, flags=compression_prefs)
 
             if usage is not None:
-                sig._signature.subpackets.addnew('KeyFlags', hashed=True, flags=usage)
+                sig._signature.subpackets.addnew('KeyFlags', hashed=True, critical=True, flags=usage)
 
             if keyserver_flags is not None:
                 sig._signature.subpackets.addnew('KeyServerPreferences', hashed=True, flags=keyserver_flags)
@@ -2406,7 +2406,7 @@ class PGPKey(Armorable, ParentRef, PGPObject):
             usage = prefs.pop('usage', None)
 
             if usage is not None:
-                sig._signature.subpackets.addnew('KeyFlags', hashed=True, flags=usage)
+                sig._signature.subpackets.addnew('KeyFlags', hashed=True, critical=True, flags=usage)
 
             crosssig = None
             # if possible, have the subkey create a primary key binding signature
