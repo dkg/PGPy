@@ -33,6 +33,7 @@ from .constants import PubKeyAlgorithm
 from .constants import RevocationKeyClass
 from .constants import RevocationReason
 from .constants import SignatureType
+from .constants import String2KeyType
 from .constants import SymmetricKeyAlgorithm
 from .constants import SecurityIssues
 
@@ -53,6 +54,8 @@ from .packet import Public
 from .packet import Sub
 from .packet import UserID
 from .packet import UserAttribute
+
+from .packet.fields import S2KSpecifier
 
 from .packet.packets import CompressedData
 from .packet.packets import IntegrityProtectedSKEData
@@ -1224,14 +1227,18 @@ class PGPMessage(Armorable, PGPObject):
         """
         cipher_algo = prefs.pop('cipher', SymmetricKeyAlgorithm.AES256)
         hash_algo = prefs.pop('hash', HashAlgorithm.SHA256)
+        s2k:Optional[S2KSpecifier] = prefs.pop('s2kspec', None)
 
         # set up a new SKESessionKeyV4
         skesk = SKESessionKeyV4()
         skesk.s2k.usage = 255
-        skesk.s2k.specifier = 3
-        skesk.s2k.halg = hash_algo
         skesk.s2k.encalg = cipher_algo
-        skesk.s2k.count = skesk.s2k.halg.tuned_count
+        if s2k is not None:
+            skesk.s2k._specifier = s2k
+        else:
+            skesk.s2k.specifier = String2KeyType.Iterated
+            skesk.s2k.halg = hash_algo
+            skesk.s2k.count = skesk.s2k.halg.tuned_count
 
         if sessionkey is None:
             sessionkey = cipher_algo.gen_key()
