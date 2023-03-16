@@ -4,10 +4,7 @@ this is where the armorable PGP block objects live
 """
 import binascii
 import collections
-try:
-    import collections.abc as collections_abc
-except ImportError:
-    collections_abc = collections
+import collections.abc
 import contextlib
 import copy
 import functools
@@ -2676,7 +2673,7 @@ class PGPKey(Armorable, ParentRef, PGPObject):
         return keys
 
 
-class PGPKeyring(collections_abc.Container, collections_abc.Iterable, collections_abc.Sized):
+class PGPKeyring(collections.abc.Container, collections.abc.Iterable, collections.abc.Sized):
     def __init__(self, *args):
         """
         PGPKeyring objects represent in-memory keyrings that can contain any combination of supported private and public
