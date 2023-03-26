@@ -47,8 +47,8 @@ from ..decorators import sdproperty
 
 from ..errors import PGPDecryptionError
 
-from ..symenc import _decrypt
-from ..symenc import _encrypt
+from ..symenc import _cfb_decrypt
+from ..symenc import _cfb_encrypt
 
 from ..types import Fingerprint
 
@@ -595,7 +595,7 @@ class SKESessionKeyV4(SKESessionKey):
             return self.symalg, sk
 
         # otherwise, we now need to decrypt the encrypted session key
-        m = bytearray(_decrypt(bytes(self.ct), sk, self.symalg))
+        m = bytearray(_cfb_decrypt(bytes(self.ct), sk, self.symalg))
         del sk
 
         symalg = SymmetricKeyAlgorithm(m[0])
@@ -614,7 +614,7 @@ class SKESessionKeyV4(SKESessionKey):
         # symmetric algorithm for the following SED or SEIPD packet.
         # This is a reasonable simplification for generation, but it
         # won't always be the same when parsing
-        self.ct = _encrypt(self.int_to_bytes(self.symalg) + sk, esk, self.symalg)
+        self.ct = _cfb_encrypt(self.int_to_bytes(self.symalg) + sk, esk, self.symalg)
 
         # update header length and return sk
         self.update_hlen()
@@ -1101,7 +1101,7 @@ class SKEData(Packet):
 
     def decrypt(self, key, alg):  # pragma: no cover
         block_size_bytes = alg.block_size // 8
-        pt_prefix = _decrypt(bytes(self.ct[:block_size_bytes + 2]), bytes(key), alg)
+        pt_prefix = _cfb_decrypt(bytes(self.ct[:block_size_bytes + 2]), bytes(key), alg)
 
         # old Symmetrically Encrypted Data Packet required
         # to change iv after decrypting prefix
@@ -1115,7 +1115,7 @@ class SKEData(Packet):
         if not constant_time.bytes_eq(iv[-2:], ivl2):
             raise PGPDecryptionError("Decryption failed")
 
-        pt = _decrypt(bytes(self.ct[block_size_bytes + 2:]), bytes(key), alg, iv=iv_resync)
+        pt = _cfb_decrypt(bytes(self.ct[block_size_bytes + 2:]), bytes(key), alg, iv=iv_resync)
 
         return pt
 
@@ -1572,12 +1572,12 @@ class IntegrityProtectedSKEDataV1(IntegrityProtectedSKEData):
         mdc.update_hlen()
 
         data += mdc.__bytes__()
-        self.ct = _encrypt(data, key, alg)
+        self.ct = _cfb_encrypt(data, key, alg)
         self.update_hlen()
 
     def decrypt(self, key, alg):
         # iv, ivl2, pt = super(IntegrityProtectedSKEDataV1, self).decrypt(key, alg)
-        pt = _decrypt(bytes(self.ct), bytes(key), alg)
+        pt = _cfb_decrypt(bytes(self.ct), bytes(key), alg)
 
         # do the MDC checks
         _expected_mdcbytes = b'\xd3\x14' + hashlib.new('SHA1', pt[:-20]).digest()
