@@ -2,13 +2,15 @@
 specify some additional curves that OpenSSL provides but cryptography doesn't explicitly expose
 """
 
+from typing import List
+
 from cryptography import utils
 
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from cryptography.hazmat.bindings.openssl.binding import Binding
 
-__all__ = tuple()
+__all__:List[str] = []
 
 # TODO: investigate defining additional curves using EC_GROUP_new_curve
 #       https://wiki.openssl.org/index.php/Elliptic_Curve_Cryptography#Defining_Curves
