@@ -765,7 +765,8 @@ class PrivKey(VersionedPacket, Primary, Private):
     def protect(self, passphrase:str,
                 enc_alg:Optional[SymmetricKeyAlgorithm]=None,
                 hash_alg:Optional[HashAlgorithm]=None,
-                s2kspec:Optional[S2KSpecifier]=None) -> None:
+                s2kspec:Optional[S2KSpecifier]=None,
+                iv:Optional[bytes]=None) -> None:
         '''Protect the secret key'''
 
     @abc.abstractmethod
@@ -959,10 +960,11 @@ class PrivKeyV4(PrivKey, PubKeyV4):
     def protect(self, passphrase:str,
                 enc_alg:Optional[SymmetricKeyAlgorithm]=None,
                 hash_alg:Optional[HashAlgorithm]=None,
-                s2kspec:Optional[S2KSpecifier]=None) -> None:
+                s2kspec:Optional[S2KSpecifier]=None,
+                iv:Optional[bytes]=None) -> None:
         if enc_alg is None:
             enc_alg = SymmetricKeyAlgorithm.AES256
-        self.keymaterial.encrypt_keyblob(passphrase, enc_alg=enc_alg, hash_alg=hash_alg, s2kspec=s2kspec)
+        self.keymaterial.encrypt_keyblob(passphrase, enc_alg=enc_alg, hash_alg=hash_alg, s2kspec=s2kspec, iv=iv)
         del passphrase
         self.update_hlen()
 
