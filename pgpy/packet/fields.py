@@ -1085,6 +1085,44 @@ class String2Key(Field):
     def halg_int(self, val:Union[int,HashAlgorithm]):
         self._specifier._halg = HashAlgorithm(val)
 
+    @property
+    def _iv_length(self) -> int:
+        if self.usage == 0:
+            return 0
+        elif self.usage in [254,255]:
+            if not self.specifier.has_iv:
+                # this is likely some sort of weird extension case
+                return 0
+            return self.encalg.block_size // 8
+        else:
+            return SymmetricKeyAlgorithm(self.usage).block_size // 8
+
+    def gen_iv(self) -> None:
+        ivlen = self._iv_length
+        if self._iv is None and ivlen:
+            self._iv:Optional[bytes] = os.urandom(ivlen)
+
+    @sdproperty
+    def iv(self) -> Optional[bytes]:
+        ivlen = self._iv_length
+        if ivlen == 0:
+            return None
+        return self._iv
+
+    @iv.register
+    def iv_bytearray(self, val:Optional[Union[bytearray,bytes]]) -> None:
+        ivlen = self._iv_length
+        if ivlen == 0:
+            if val is not None and len(val) > 0:
+                raise PGPError(f"setting an IV of length {len(val)} when it should be nothing")
+            self._iv = None
+        else:
+            if val is not None:
+                if len(val) != ivlen:
+                    raise PGPError(f"setting an IV of length {len(val)} when it should be {ivlen}")
+                val = bytes(val)
+            self._iv = val
+
     @sdproperty
     def count(self) -> int:
         return self._specifier.iteration_count
@@ -1100,7 +1138,7 @@ class String2Key(Field):
         self.usage:int = 0
         self._encalg = None
         self._specifier:S2KSpecifier = S2KSpecifier()
-        self.iv:Optional[bytearray] = None
+        self._iv = None
 
     def __bytearray__(self) -> bytearray:
         _bytes = bytearray()
@@ -1136,9 +1174,11 @@ class String2Key(Field):
             del packet[0]
 
             self._specifier.parse(packet)
-            if self.encalg is not None and self.encalg != SymmetricKeyAlgorithm.Plaintext and iv:
-                self.iv = packet[:(self.encalg.block_size // 8)]
-                del packet[:(self.encalg.block_size // 8)]
+            if iv:
+                ivlen = self._iv_length
+                if ivlen:
+                    self.iv = packet[:(ivlen)]
+                    del packet[:(ivlen)]
 
     def derive_key(self, passphrase) -> bytes:
         if self.usage not in [254,255]:
@@ -1303,7 +1343,7 @@ class PrivKey(PubKey):
         self.s2k.usage = 254
         self.s2k.encalg = enc_alg
         self.s2k.specifier = String2KeyType.Iterated
-        self.s2k.iv = enc_alg.gen_iv()
+        self.s2k.gen_iv()
         self.s2k.halg = hash_alg
         self.s2k.salt = bytearray(os.urandom(8))
         self.s2k.count = hash_alg.tuned_count

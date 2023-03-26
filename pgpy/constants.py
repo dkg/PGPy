@@ -538,6 +538,13 @@ class String2KeyType(IntEnum):
               String2KeyType.Iterated: 8,
               }
         return ks.get(self, 0)
+    @property
+    def has_iv(self) -> bool:
+        'When this S2K type is used for secret key protection, should we expect an IV to follow?'
+        return self in [String2KeyType.Simple,
+                        String2KeyType.Salted,
+                        String2KeyType.Iterated,
+                        ]
 
 
 class S2KGNUExtension(IntEnum):
