@@ -34,6 +34,11 @@ instead of KeyID.  When accessing this property via subscript (i.e.,
 key.subkeys[x]), you can *also* index it by KeyID, but using a full
 Fingerprint is recommended.
 
+PGPKey.protect() now no longer requires you to specify a choice of
+algorithms.  PGPy will make good decisions by default, and you should
+not indicate specific algorithms unless you have a very clear reason
+to do so.
+
 v0.6.0
 ======
 
