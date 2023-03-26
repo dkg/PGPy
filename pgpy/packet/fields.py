@@ -15,6 +15,7 @@ from typing import Optional, Union, ByteString
 from warnings import warn
 
 import collections.abc
+from datetime import datetime
 
 from typing import Tuple, Union
 
@@ -48,6 +49,7 @@ from .types import MPIs
 
 from ..constants import EllipticCurveOID
 from ..constants import ECPointFormat
+from ..constants import PacketTag
 from ..constants import HashAlgorithm
 from ..constants import PubKeyAlgorithm
 from ..constants import String2KeyType
@@ -64,6 +66,7 @@ from ..errors import PGPIncompatibleECPointFormatError
 
 from ..symenc import _cfb_decrypt
 from ..symenc import _cfb_encrypt
+from ..symenc import AEAD
 
 from ..types import Field
 from ..types import Fingerprint
@@ -1365,9 +1368,16 @@ class PrivKey(PubKey):
                         enc_alg:SymmetricKeyAlgorithm=SymmetricKeyAlgorithm.AES256,
                         hash_alg:Optional[HashAlgorithm]=None,
                         s2kspec:Optional[S2KSpecifier]=None,
-                        iv:Optional[bytes]=None) -> None:
-        # PGPy will only ever use iterated and salted S2k mode
-        self.s2k.usage = S2KUsage.CFB
+                        iv:Optional[bytes]=None,
+                        aead_mode:Optional[AEADMode]=None,
+                        packet_tag:PacketTag=PacketTag.SecretKey,
+                        key_version:int=4,
+                        creation_time:Optional[datetime]=None) -> None:
+        if aead_mode is not None:
+            self.s2k.usage = S2KUsage.AEAD
+            self.s2k.aead_mode = aead_mode
+        else:
+            self.s2k.usage = S2KUsage.CFB
         self.s2k.encalg = enc_alg
         passed_s2kspec:bool
         if s2kspec is not None:
@@ -1393,11 +1403,39 @@ class PrivKey(PubKey):
         pt = bytearray()
         self._append_private_fields(pt)
 
-        # append a SHA-1 hash of the plaintext so far to the plaintext
-        pt += HashAlgorithm.SHA1.digest(pt)
+        if self.s2k.usage == S2KUsage.CFB:
+            # append a SHA-1 hash of the plaintext so far to the plaintext
+            pt += HashAlgorithm.SHA1.digest(pt)
 
-        # encrypt
-        self.encbytes = bytearray(_cfb_encrypt(bytes(pt), bytes(sessionkey), enc_alg, bytes(self.s2k.iv)))
+            # encrypt
+            self.encbytes = bytearray(_cfb_encrypt(bytes(pt), bytes(sessionkey), enc_alg, bytes(self.s2k.iv)))
+        elif self.s2k.usage == S2KUsage.AEAD:
+            if aead_mode is None:
+                raise ValueError("S2K Usage Octet indicates AEAD, but no AEAD mode provided")
+            if creation_time is None:
+                raise ValueError("S2K Usage Octet indicates AEAD, but no creation time provided")
+            if self.__pubkey_algo__ is None:
+                raise ValueError(f"S2K Usage Octet indicates AEAD, but the public key algorithm of this secret key is unknown ({type(self)})")
+            # The info parameter is comprised of the Packet Tag in OpenPGP format encoding (bits 7 and 6 set, bits 5-0 carry the packet tag), the packet version, and the cipher-algo and AEAD-mode used to encrypt the key material.
+            hkdf_info = bytes([0xc0 | int(packet_tag), key_version, int(enc_alg), int(aead_mode)])
+            hkdf = HKDF(algorithm=SHA256(), length=enc_alg.key_size // 8, salt=None, info=hkdf_info)
+            aeadkey:bytes = hkdf.derive(bytes(sessionkey))
+            aead = AEAD(enc_alg, self.s2k.aead_mode, aeadkey)
+
+            # As additional data, the Packet Tag in OpenPGP format encoding (bits 7 and 6 set, bits 5-0 carry the packet tag), followed by the public key packet fields, starting with the packet version number, are passed to the AEAD algorithm.
+            # For example, the additional data used with a Secret-Key Packet of version 4 consists of the octets 0xC5, 0x04, followed by four octets of creation time, one octet denoting the public-key algorithm, and the algorithm-specific public-key parameters.
+            # For a Secret-Subkey Packet, the first octet would be 0xC7.
+            # For a version 6 key packet, the second octet would be 0x06, and the four-octet octet count of the public key material would be included as well (see {{public-key-packet-formats}}).
+            additional_data = bytes([0xc0 | int(packet_tag), key_version])
+            additional_data += self.int_to_bytes(int(creation_time.timestamp()), 4)
+            additional_data += bytes([int(self.__pubkey_algo__)])
+            pubkey_data = bytes(super().__bytearray__())
+            additional_data += self.int_to_bytes(len(pubkey_data), 4)
+            additional_data += pubkey_data
+
+            self.encbytes = bytearray(aead.encrypt(bytes(self.s2k.iv), bytes(pt), additional_data))
+        else:
+            raise PGPError(f"Unknown S2K usage octet {self.s2k.usage!r}, expected {S2KUsage.AEAD!r} or {S2KUsage.CFB!r}")
 
         # delete pt and clear self
         del pt

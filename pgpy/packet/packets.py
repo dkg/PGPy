@@ -964,10 +964,14 @@ class PrivKey(VersionedPacket, Primary, Private):
                 enc_alg:Optional[SymmetricKeyAlgorithm]=None,
                 hash_alg:Optional[HashAlgorithm]=None,
                 s2kspec:Optional[S2KSpecifier]=None,
-                iv:Optional[bytes]=None) -> None:
+                iv:Optional[bytes]=None,
+                aead_mode:Optional[AEADMode]=None) -> None:
         if enc_alg is None:
             enc_alg = SymmetricKeyAlgorithm.AES256
-        self.keymaterial.encrypt_keyblob(passphrase, enc_alg=enc_alg, hash_alg=hash_alg, s2kspec=s2kspec, iv=iv)
+        self.keymaterial.encrypt_keyblob(passphrase, enc_alg=enc_alg, hash_alg=hash_alg, s2kspec=s2kspec, iv=iv, aead_mode=aead_mode,
+                                         packet_tag=self.__typeid__,
+                                         key_version=self.__ver__,
+                                         creation_time=self._created)
         del passphrase
         self.update_hlen()
 
