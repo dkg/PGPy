@@ -1028,8 +1028,13 @@ class PGPMessage(Armorable, PGPObject):
                    u"{signature:s}"
 
             # only add a Hash: header if we actually have at least one signature
-            hashes = set(s.hash_algorithm.name for s in self.signatures)
-            hhdr = 'Hash: {hashes:s}\n'.format(hashes=','.join(sorted(hashes))) if hashes else ''
+            hashes = set(s.hash_algorithm.name for s in filter(lambda sig: sig._signature.__ver__ in [3,4], self.signatures))
+            saltedhashes = set(f"SaltedHash: {s.hash_algorithm.name}:{binascii.b2a_base64(s._signature.salt, newline=False).decode().strip('=')}\n"
+                               for s in filter(lambda sig: sig._signature.__ver__ == 6, self.signatures))
+            hhdr = ''
+            if hashes:
+                hhdr += f"Hash: {','.join(sorted(hashes))}\n"
+            hhdr += ''.join(saltedhashes)
 
             return tmpl.format(hhdr=hhdr,
                                cleartext=self.dash_escape(self.bytes_to_text(self._message)),
