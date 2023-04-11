@@ -351,6 +351,7 @@ class EdDSASignature(DSASignature):
 
 class PubKey(MPIs):
     __pubfields__:Tuple = ()
+    __pubkey_algo__:Optional[PubKeyAlgorithm] = None
 
     @property
     def __mpis__(self):
@@ -408,6 +409,7 @@ class OpaquePubKey(PubKey):  # pragma: no cover
 
 class RSAPub(PubKey):
     __pubfields__ = ('n', 'e')
+    __pubkey_algo__ = PubKeyAlgorithm.RSAEncryptOrSign
 
     def __pubkey__(self):
         return rsa.RSAPublicNumbers(self.e, self.n).public_key()
@@ -428,6 +430,7 @@ class RSAPub(PubKey):
 
 class DSAPub(PubKey):
     __pubfields__ = ('p', 'q', 'g', 'y')
+    __pubkey_algo__ = PubKeyAlgorithm.DSA
 
     def __pubkey__(self):
         params = dsa.DSAParameterNumbers(self.p, self.q, self.g)
@@ -449,6 +452,7 @@ class DSAPub(PubKey):
 
 class ElGPub(PubKey):
     __pubfields__ = ('p', 'g', 'y')
+    __pubkey_algo__ = PubKeyAlgorithm.ElGamal
 
     def __pubkey__(self):
         raise NotImplementedError()
@@ -525,6 +529,7 @@ class ECPoint:
 
 class ECDSAPub(PubKey):
     __pubfields__ = ('p',)
+    __pubkey_algo__ = PubKeyAlgorithm.ECDSA
 
     def __init__(self):
         super(ECDSAPub, self).__init__()
@@ -571,6 +576,7 @@ class ECDSAPub(PubKey):
 
 class EdDSAPub(PubKey):
     __pubfields__ = ('p', )
+    __pubkey_algo__ = PubKeyAlgorithm.EdDSA
 
     def __init__(self):
         super(EdDSAPub, self).__init__()
@@ -622,6 +628,7 @@ class EdDSAPub(PubKey):
 
 class ECDHPub(PubKey):
     __pubfields__ = ('p',)
+    __pubkey_algo__ = PubKeyAlgorithm.ECDH
 
     def __init__(self):
         super(ECDHPub, self).__init__()
