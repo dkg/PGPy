@@ -56,6 +56,7 @@ from ..constants import AEADMode
 from ..decorators import sdproperty
 
 from ..errors import PGPDecryptionError
+from ..errors import PGPEncryptionError
 
 from ..symenc import _cfb_decrypt
 from ..symenc import _cfb_encrypt
@@ -66,6 +67,7 @@ from ..types import KeyID
 
 __all__ = ['PKESessionKey',
            'PKESessionKeyV3',
+           'PKESessionKeyV6',
            'Signature',
            'SignatureV4',
            'SKESessionKey',
@@ -322,6 +324,102 @@ class PKESessionKeyV3(PKESessionKey):
 
         else:  # pragma: no cover
             del packet[:(self.header.length - 18)]
+
+class PKESessionKeyV6(PKESessionKey):
+    __ver__ = 6
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.pkalg = 0
+        self.ct:Optional[CipherText] = None
+        self._encrypter:Optional[Fingerprint] = None
+
+    @sdproperty
+    def pkalg(self) -> PubKeyAlgorithm:
+        return self._pkalg
+
+    @pkalg.register
+    def pkalg_int(self, val:Union[int,PubKeyAlgorithm]) -> None:
+        self._pkalg = PubKeyAlgorithm(val)
+
+        _c = {PubKeyAlgorithm.RSAEncryptOrSign: RSACipherText,
+              PubKeyAlgorithm.RSAEncrypt: RSACipherText,
+              PubKeyAlgorithm.FormerlyElGamalEncryptOrSign: ElGCipherText,
+              PubKeyAlgorithm.ECDH: ECDHCipherText,
+              }
+
+        ct = _c.get(self._pkalg, None)
+        self.ct = ct() if ct is not None else ct
+
+    @sdproperty
+    def encrypter(self) -> Optional[Fingerprint]:
+        return self._encrypter
+
+    def __bytearray__(self) -> bytearray:
+        _bytes = bytearray()
+        _bytes += super().__bytearray__()
+        if self._encrypter is None:
+            _bytes.append(0)
+        else:
+            _bytes.append(self._encrypter.version)
+            _bytes += bytes(self._encrypter)
+        _bytes.append(self.pkalg)
+        _bytes += self.ct.__bytearray__() if self.ct is not None else b'\x00' * (self.header.length - 10)
+        return _bytes
+
+    def __copy__(self) -> "PKESessionKeyV6":
+        sk = self.__class__()
+        sk.header = copy.copy(self.header)
+        sk._encrypter = self._encrypter
+        sk.pkalg = self.pkalg
+        if self.ct is not None:
+            sk.ct = copy.copy(self.ct)
+        return sk
+
+    def decrypt_sk(self, pk) -> Tuple[Optional[SymmetricKeyAlgorithm],bytes]:
+        algo:Optional[SymmetricKeyAlgorithm]
+        symkey:bytes
+        if self.ct is None:
+            raise PGPDecryptionError("PKESKv6: Tried to decrypt session key when ciphertext was not initialized")
+        (algo,symkey) = self.ct.decrypt(pk.keymaterial)
+        if algo is not None:
+            raise PGPDecryptionError(f"Should have been a null algorithm, got {algo}")
+        return None, symkey
+
+    def encrypt_sk(self, pk, symalg:Optional[SymmetricKeyAlgorithm], symkey:bytes, **kwargs) -> None:
+        if symalg is not None:
+            raise ValueError(f"PKESKv6 does not encrypt the symmetric key algorithm, but {symalg} was supplied (should be None)")
+        self._encrypter = pk.fingerprint
+        self.pkalg = pk.pkalg
+        if self.ct is None:
+            raise PGPEncryptionError(f"Don't know how to encrypt to {pk.pkalg!r}")
+        self.ct = self.ct.encrypt(pk, symkey, **kwargs)
+        self.update_hlen()
+
+    def parse(self, packet:bytearray) -> None:
+        super().parse(packet)
+        # parse the key version
+        fpversion = packet[0]
+        del packet[0]
+        if fpversion == 4:
+            fplen = 20
+        elif fpversion == 6:
+            fplen = 32
+        else:
+            # we don't know what key version this is, so skip the rest of the packet:
+            del packet[:(self.header.length - 2)]
+            return
+        # extract the fingerprint
+        self._encrypter = Fingerprint(bytes(packet[:fplen]))
+        del packet[:fplen]
+
+        self.pkalg = packet[0]
+        del packet[0]
+
+        if self.ct is not None:
+            self.ct.parse(packet)
+        else:  # pragma: no cover
+            del packet[:(self.header.length - (2 + fplen + 1))]
 
 
 class OnePassSignature(VersionedPacket):
