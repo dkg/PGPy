@@ -689,6 +689,7 @@ class PGPUID(ParentRef):
                 elif sig.signer:
                     if self.parent.fingerprint == sig.signer:
                         return sig
+        return None
 
     @property
     def signers(self):
