@@ -17,6 +17,8 @@ import weakref
 from enum import EnumMeta
 from enum import IntEnum
 
+from typing import Optional
+
 from .decorators import sdproperty
 
 from .errors import PGPError
@@ -556,7 +558,7 @@ class Dispatchable(PGPObject, metaclass=MetaDispatchable):
     def __typeid__(self):  # pragma: no cover
         return False
 
-    __ver__ = None
+    __ver__:Optional[int] = None
 
 
 class SignatureVerification(object):
