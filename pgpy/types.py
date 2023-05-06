@@ -725,14 +725,14 @@ class Fingerprint(str):
     Primarily used as a key for internal dictionaries, so it ignores spaces when comparing and hashing
     """
     @property
-    def keyid(self):
-        return self[-16:]
+    def keyid(self) -> KeyID:
+        return KeyID(self[-16:])
 
     @property
-    def shortid(self):
+    def shortid(self) -> str:
         return self[-8:]
 
-    def __new__(cls, content):
+    def __new__(cls, content) -> "Fingerprint":
         if isinstance(content, Fingerprint):
             return content
 
@@ -742,7 +742,7 @@ class Fingerprint(str):
             raise ValueError('Fingerprint must be a string of 40 hex digits')
         return str.__new__(cls, content)
 
-    def __eq__(self, other):
+    def __eq__(self, other:object) -> bool:
         if isinstance(other, Fingerprint):
             return str(self) == str(other)
 
@@ -754,19 +754,18 @@ class Fingerprint(str):
             return any([str(self) == other,
                         self.keyid == other,
                         self.shortid == other])
-
         return False  # pragma: no cover
 
-    def __ne__(self, other):
+    def __ne__(self, other:object) -> bool:
         return not (self == other)
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash(str(self))
 
-    def __bytes__(self):
+    def __bytes__(self) -> bytes:
         return binascii.unhexlify(self.encode("latin-1"))
 
-    def __pretty__(self):
+    def __pretty__(self) -> str:
         content = self
         if not bool(re.match(r'^[A-F0-9]{40}$', content)):
             raise ValueError("Expected: String of 40 hex digits")
@@ -777,7 +776,7 @@ class Fingerprint(str):
         ]
         return '  '.join(' '.join(c for c in half) for half in halves)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return '{classname}({fp})'.format(
             classname=self.__class__.__name__,
             fp=self.__pretty__()
