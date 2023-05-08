@@ -17,7 +17,7 @@ import weakref
 
 from datetime import datetime, timezone
 
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Set, Union
 
 from cryptography.hazmat.primitives import hashes
 
@@ -72,6 +72,7 @@ from .packet.types import Opaque
 
 from .types import Armorable
 from .types import Fingerprint
+from .types import KeyID
 from .types import ParentRef
 from .types import PGPObject
 from .types import SignatureVerification
@@ -874,9 +875,9 @@ class PGPMessage(Armorable, PGPObject):
         return re.subn(r'^-', '- -', text, flags=re.MULTILINE)[0]
 
     @property
-    def encrypters(self):
+    def encrypters(self) -> Set[Union[KeyID,Fingerprint]]:
         """A ``set`` containing all key ids (if any) to which this message was encrypted."""
-        return set(m.encrypter for m in self._sessionkeys if isinstance(m, PKESessionKey))
+        return set(m.encrypter for m in self._sessionkeys if isinstance(m, PKESessionKey) and m.encrypter is not None)
 
     @property
     def filename(self):

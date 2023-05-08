@@ -51,6 +51,7 @@ from ..symenc import _cfb_decrypt
 from ..symenc import _cfb_encrypt
 
 from ..types import Fingerprint
+from ..types import KeyID
 
 __all__ = ['PKESessionKey',
            'PKESessionKeyV3',
@@ -93,6 +94,10 @@ class PKESessionKey(VersionedPacket):
     def encrypt_sk(self, pk, symalg:Optional[SymmetricKeyAlgorithm], symkey:bytes) -> None:
         raise NotImplementedError()
 
+    # a PKESK should return a pointer to the recipient, or None
+    @abc.abstractproperty
+    def encrypter(self) -> Optional[Union[KeyID,Fingerprint]]:
+        raise NotImplementedError()
 
 class PKESessionKeyV3(PKESessionKey):
     """
@@ -160,12 +165,15 @@ class PKESessionKeyV3(PKESessionKey):
     __ver__ = 3
 
     @sdproperty
-    def encrypter(self):
+    def encrypter(self) -> KeyID:
         return self._encrypter
 
     @encrypter.register(bytearray)
     def encrypter_bin(self, val):
-        self._encrypter = binascii.hexlify(val).upper().decode('latin-1')
+        if val == b'\x00'*8:
+            self._encrypter = None
+        else:
+            self._encrypter = KeyID(val)
 
     @sdproperty
     def pkalg(self):
@@ -187,14 +195,17 @@ class PKESessionKeyV3(PKESessionKey):
 
     def __init__(self):
         super(PKESessionKeyV3, self).__init__()
-        self.encrypter = bytearray(8)
+        self._encrypter:Optional[KeyID] = None
         self.pkalg = 0
         self.ct = None
 
     def __bytearray__(self):
         _bytes = bytearray()
         _bytes += super(PKESessionKeyV3, self).__bytearray__()
-        _bytes += binascii.unhexlify(self.encrypter.encode())
+        if self._encrypter is None:
+            _bytes += b'\x00'*8
+        else:
+            _bytes += bytes(self._encrypter)
         _bytes += bytearray([self.pkalg])
         _bytes += self.ct.__bytearray__() if self.ct is not None else b'\x00' * (self.header.length - 10)
         return _bytes
