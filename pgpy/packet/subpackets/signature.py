@@ -10,7 +10,7 @@ from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
 
-from typing import Optional,Type
+from typing import Optional, Type, Union
 
 from .types import EmbeddedSignatureHeader
 from .types import Signature
@@ -29,6 +29,7 @@ from ...constants import SymmetricKeyAlgorithm
 from ...decorators import sdproperty
 
 from ...types import Fingerprint
+from ...types import KeyID
 
 
 __all__ = ['URI',
@@ -580,20 +581,20 @@ class Issuer(Signature):
     __typeid__ = 0x10
 
     @sdproperty
-    def issuer(self):
+    def issuer(self) -> KeyID:
         return self._issuer
 
-    @issuer.register(bytearray)
-    def issuer_bytearray(self, val):
-        self._issuer = binascii.hexlify(val).upper().decode('latin-1')
+    @issuer.register
+    def issuer_set(self, val:Union[bytearray,bytes,str,KeyID,Fingerprint]):
+        self._issuer = KeyID(val)
 
     def __init__(self):
         super(Issuer, self).__init__()
-        self.issuer = bytearray()
+        self.issuer = bytearray(b'\x00'*8)
 
     def __bytearray__(self):
         _bytes = super(Issuer, self).__bytearray__()
-        _bytes += binascii.unhexlify(self._issuer.encode())
+        _bytes += bytes(self._issuer)
         return _bytes
 
     def parse(self, packet):
