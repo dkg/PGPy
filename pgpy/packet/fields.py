@@ -13,6 +13,8 @@ import os
 
 import collections.abc
 
+from typing import Tuple
+
 from pyasn1.codec.der import decoder
 from pyasn1.codec.der import encoder
 from pyasn1.type.univ import Integer
@@ -373,7 +375,7 @@ class EdDSASignature(DSASignature):
 
 
 class PubKey(MPIs):
-    __pubfields__ = ()
+    __pubfields__:Tuple = ()
 
     @property
     def __mpis__(self):
@@ -1133,7 +1135,7 @@ class ECKDF(Field):
 
 
 class PrivKey(PubKey):
-    __privfields__ = ()
+    __privfields__:Tuple = ()
 
     @property
     def __mpis__(self):
