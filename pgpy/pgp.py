@@ -695,11 +695,11 @@ class PGPUID(ParentRef):
         return None
 
     @property
-    def signers(self):
+    def signers(self) -> Set[Union[KeyID,Fingerprint]]:
         """
         This will be a set of all of the key ids which have signed this User ID or Attribute.
         """
-        return set(s.signer for s in self.__sig__)
+        return set(s.signer for s in self.__sig__) | set(s.signer_fingerprint for s in self.__sig__ if s.signer_fingerprint is not None)
 
     @property
     def hashdata(self):
@@ -939,7 +939,7 @@ class PGPMessage(Armorable, PGPObject):
     @property
     def signers(self) -> Set[Union[KeyID,Fingerprint]]:
         """A ``set`` containing all key ids (if any) which have signed this message."""
-        return set(m.signer for m in self._signatures)
+        return set(m.signer for m in self._signatures) | set(m.signer_fingerprint for m in self._signatures if m.signer_fingerprint is not None)
 
     @property
     def type(self):
@@ -1549,9 +1549,9 @@ class PGPKey(Armorable, ParentRef, PGPObject):
             yield sig
 
     @property
-    def signers(self):
+    def signers(self) -> Set[Union[KeyID,Fingerprint]]:
         """A ``set`` of key ids of keys that were used to sign this key"""
-        return {sig.signer for sig in self.__sig__}
+        return set(sig.signer for sig in self.__sig__) | set(sig.signer_fingerprint for sig in self.__sig__ if sig.signer_fingerprint is not None)
 
     @property
     def revocation_signatures(self):
