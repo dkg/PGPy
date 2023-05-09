@@ -4,6 +4,20 @@
 Changelog
 *********
 
+v0.7.0
+======
+
+(not yet released)
+
+API changes
+-----------
+
+The following property of PGPSignature now returns None if the
+corresponding subpacket is not present (it used to return an empty
+string in that case):
+
+* signer_fingerprint
+
 v0.6.0
 ======
 
