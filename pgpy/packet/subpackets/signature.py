@@ -835,7 +835,7 @@ class EmbeddedSignature(Signature):
         return self._sigpkt
 
     @_sig.setter
-    def _sig(self, val):
+    def _sig_set(self, val):
         esh = EmbeddedSignatureHeader()
         esh.version = val.header.version
         val.header = esh
