@@ -706,6 +706,7 @@ class Features(IntFlag):
     SEIPDv1 = 0x01
     # alias (the old name, in RFC 4880):
     ModificationDetection = 0x01
+    SEIPDv2 = 0x08
 
     @classproperty
     def pgpy_features(cls) -> "Features":
