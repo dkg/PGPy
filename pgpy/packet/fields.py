@@ -59,6 +59,7 @@ from ..constants import PubKeyAlgorithm
 from ..constants import String2KeyType
 from ..constants import S2KGNUExtension
 from ..constants import SymmetricKeyAlgorithm
+from ..constants import S2KUsage
 
 from ..decorators import sdproperty
 
@@ -1087,9 +1088,9 @@ class String2Key(Field):
 
     @property
     def _iv_length(self) -> int:
-        if self.usage == 0:
+        if self.usage == S2KUsage.Unprotected:
             return 0
-        elif self.usage in [254,255]:
+        elif self.usage in [S2KUsage.CFB,S2KUsage.MalleableCFB]:
             if not self.specifier.has_iv:
                 # this is likely some sort of weird extension case
                 return 0
@@ -1135,7 +1136,7 @@ class String2Key(Field):
 
     def __init__(self) -> None:
         super().__init__()
-        self.usage:int = 0
+        self.usage:S2KUsage = S2KUsage.Unprotected
         self._encalg = None
         self._specifier:S2KSpecifier = S2KSpecifier()
         self._iv = None
@@ -1154,7 +1155,7 @@ class String2Key(Field):
         return len(self.__bytearray__())
 
     def __bool__(self) -> bool:
-        return self.usage in [254, 255]
+        return self.usage in [S2KUsage.CFB, S2KUsage.MalleableCFB]
 
     def __copy__(self) -> "String2Key":
         s2k = String2Key()
@@ -1166,7 +1167,7 @@ class String2Key(Field):
         return s2k
 
     def parse(self, packet, iv=True) -> None:
-        self.usage = packet[0]
+        self.usage = S2KUsage(packet[0])
         del packet[0]
 
         if bool(self):
@@ -1181,8 +1182,8 @@ class String2Key(Field):
                     del packet[:(ivlen)]
 
     def derive_key(self, passphrase) -> bytes:
-        if self.usage not in [254,255]:
-            raise ValueError(f"can only derive key from String2Key object when usage octet is 254 or 255, not {self.usage}")
+        if self.usage not in [S2KUsage.CFB,S2KUsage.MalleableCFB]:
+            raise ValueError(f"can only derive key from String2Key object when usage octet is CFB or MalleableCFB, not {self.usage}")
         if self.encalg is None:
             raise ValueError("cannot derive key from String2Key object when encalg is unset")
         return self._specifier.derive_key(passphrase, self.encalg.key_size)
@@ -1302,7 +1303,7 @@ class PrivKey(PubKey):
             for field in self.__privfields__:
                 _bytes += getattr(self, field).to_mpibytes()
 
-        if self.s2k.usage == 0:
+        if self.s2k.usage == S2KUsage.Unprotected:
             _bytes += self.chksum
 
         return _bytes
@@ -1340,7 +1341,7 @@ class PrivKey(PubKey):
 
     def encrypt_keyblob(self, passphrase, enc_alg, hash_alg):
         # PGPy will only ever use iterated and salted S2k mode
-        self.s2k.usage = 254
+        self.s2k.usage = S2KUsage.CFB
         self.s2k.encalg = enc_alg
         self.s2k.specifier = String2KeyType.Iterated
         self.s2k.gen_iv()
@@ -1389,12 +1390,12 @@ class PrivKey(PubKey):
         pt = _cfb_decrypt(bytes(self.encbytes), bytes(sessionkey), self.s2k.encalg, bytes(self.s2k.iv))
 
         # check the hash to see if we decrypted successfully or not
-        if self.s2k.usage == 254 and not pt[-20:] == hashlib.new('sha1', pt[:-20]).digest():
+        if self.s2k.usage == S2KUsage.CFB and not pt[-20:] == hashlib.new('sha1', pt[:-20]).digest():
             # if the usage byte is 254, key material is followed by a 20-octet sha-1 hash of the rest
             # of the key material block
             raise PGPDecryptionError("Passphrase was incorrect!")
 
-        if self.s2k.usage == 255 and not self.bytes_to_int(pt[-2:]) == (sum(bytearray(pt[:-2])) % 65536):  # pragma: no cover
+        if self.s2k.usage == S2KUsage.MalleableCFB and not self.bytes_to_int(pt[-2:]) == (sum(bytearray(pt[:-2])) % 65536):  # pragma: no cover
             # if the usage byte is 255, key material is followed by a 2-octet checksum of the rest
             # of the key material block
             raise PGPDecryptionError("Passphrase was incorrect!")
@@ -1472,7 +1473,7 @@ class RSAPriv(PrivKey, RSAPub):
             self.q = MPI(packet)
             self.u = MPI(packet)
 
-            if self.s2k.usage == 0:
+            if self.s2k.usage == S2KUsage.Unprotected:
                 self.chksum = packet[:2]
                 del packet[:2]
 
@@ -1489,7 +1490,7 @@ class RSAPriv(PrivKey, RSAPub):
         self.q = MPI(kb)
         self.u = MPI(kb)
 
-        if self.s2k.usage in [254, 255]:
+        if self.s2k.usage in [S2KUsage.CFB, S2KUsage.MalleableCFB]:
             self.chksum = kb
             del kb
 
@@ -1538,7 +1539,7 @@ class DSAPriv(PrivKey, DSAPub):
         else:
             self.encbytes = packet
 
-        if self.s2k.usage in [0, 255]:
+        if self.s2k.usage in [S2KUsage.Unprotected, S2KUsage.MalleableCFB]:
             self.chksum = packet[:2]
             del packet[:2]
 
@@ -1548,7 +1549,7 @@ class DSAPriv(PrivKey, DSAPub):
 
         self.x = MPI(kb)
 
-        if self.s2k.usage in [254, 255]:
+        if self.s2k.usage in [S2KUsage.CFB, S2KUsage.MalleableCFB]:
             self.chksum = kb
             del kb
 
@@ -1579,7 +1580,7 @@ class ElGPriv(PrivKey, ElGPub):
         else:
             self.encbytes = packet
 
-        if self.s2k.usage in [0, 255]:
+        if self.s2k.usage in [S2KUsage.Unprotected, S2KUsage.MalleableCFB]:
             self.chksum = packet[:2]
             del packet[:2]
 
@@ -1589,7 +1590,7 @@ class ElGPriv(PrivKey, ElGPub):
 
         self.x = MPI(kb)
 
-        if self.s2k.usage in [254, 255]:
+        if self.s2k.usage in [S2KUsage.CFB, S2KUsage.MalleableCFB]:
             self.chksum = kb
             del kb
 
@@ -1627,7 +1628,7 @@ class ECDSAPriv(PrivKey, ECDSAPub):
         if not self.s2k:
             self.s = MPI(packet)
 
-            if self.s2k.usage == 0:
+            if self.s2k.usage == S2KUsage.Unprotected:
                 self.chksum = packet[:2]
                 del packet[:2]
         else:
@@ -1679,7 +1680,7 @@ class EdDSAPriv(PrivKey, EdDSAPub):
 
         if not self.s2k:
             self.s = MPI(packet)
-            if self.s2k.usage == 0:
+            if self.s2k.usage == S2KUsage.Unprotected:
                 self.chksum = packet[:2]
                 del packet[:2]
         else:
@@ -1706,7 +1707,7 @@ class ECDHPriv(ECDSAPriv, ECDHPub):
         _b += self.s2k.__bytearray__()
         if not self.s2k:
             _b += self.s.to_mpibytes()
-            if self.s2k.usage == 0:
+            if self.s2k.usage == S2KUsage.Unprotected:
                 _b += self.chksum
         else:
             _b += self.encbytes
@@ -1758,7 +1759,7 @@ class ECDHPriv(ECDSAPriv, ECDHPub):
 
         if not self.s2k:
             self.s = MPI(packet)
-            if self.s2k.usage == 0:
+            if self.s2k.usage == S2KUsage.Unprotected:
                 self.chksum = packet[:2]
                 del packet[:2]
         else:
