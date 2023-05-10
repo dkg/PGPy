@@ -717,19 +717,34 @@ class Fingerprint(str):
     def shortid(self) -> str:
         return self[-8:]
 
-    def __new__(cls, content) -> "Fingerprint":
+    @sdproperty
+    def version(self) -> int:
+        'Returns None if the version is unknown'
+        return self._version
+
+    @version.register
+    def version_int(self, version:int) -> None:
+        self._version:int = version
+
+    def __new__(cls, content:Union[str,bytes,bytearray], version=None) -> "Fingerprint":
         if isinstance(content, Fingerprint):
             return content
 
+        if isinstance(content, (bytes, bytearray)):
+            if len(content) != 20:
+                raise ValueError(f'binary Fingerprint must be 20 bytes, not {len(content)}')
+            return Fingerprint(binascii.b2a_hex(content).decode('latin-1').upper())
         # validate input before continuing: this should be a string of 40 hex digits
         content = content.upper().replace(' ', '')
-        if not re.match(r'^[0-9A-F]+$', content):
+        if not re.match(r'^[0-9A-F]{40}$', content):
             raise ValueError('Fingerprint must be a string of 40 hex digits')
-        return str.__new__(cls, content)
+        ret = str.__new__(cls, content)
+        ret._version = 4 if version is None else version
+        return ret
 
     def __eq__(self, other:object) -> bool:
         if isinstance(other, Fingerprint):
-            return str(self) == str(other)
+            return str(self) == str(other) and self._version == other._version
         if isinstance(other, KeyID):
             return self.keyid == other
 
@@ -750,7 +765,10 @@ class Fingerprint(str):
         return hash(str(self))
 
     def __bytes__(self) -> bytes:
-        return binascii.unhexlify(self.encode("latin-1"))
+        return binascii.a2b_hex(self.encode("latin-1"))
+
+    def __wireformat__(self) -> bytes:
+        return bytes([self._version]) + bytes(self)
 
     def __pretty__(self) -> str:
         content = self
@@ -764,10 +782,7 @@ class Fingerprint(str):
         return '  '.join(' '.join(c for c in half) for half in halves)
 
     def __repr__(self) -> str:
-        return '{classname}({fp})'.format(
-            classname=self.__class__.__name__,
-            fp=self.__pretty__()
-        )
+        return f'{self.__class__.__name__}v{self._version}({self.__pretty__()})'
 
 
 class SorteDeque(collections.deque):
