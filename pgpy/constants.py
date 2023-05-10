@@ -12,6 +12,7 @@ from enum import IntEnum
 from enum import IntFlag
 
 from types import LambdaType
+from typing import Optional
 
 from pyasn1.type.univ import ObjectIdentifier
 
@@ -50,111 +51,80 @@ __all__ = [
 # this is 50 KiB
 _hashtunedata = bytearray([10, 11, 12, 13, 14, 15, 16, 17] * 128 * 50)
 
-
-class EllipticCurveOID(Enum):
-    """OIDs for supported elliptic curves."""
-    # these are specified as:
-    # id = (oid, curve)
-    Invalid = ('', )
-    #: DJB's fast elliptic curve
-    Curve25519 = ('1.3.6.1.4.1.3029.1.5.1', X25519)
-    #: Twisted Edwards variant of Curve25519
-    Ed25519 = ('1.3.6.1.4.1.11591.15.1', Ed25519)
-    #: NIST P-256, also known as SECG curve secp256r1
-    NIST_P256 = ('1.2.840.10045.3.1.7', ec.SECP256R1)
-    #: NIST P-384, also known as SECG curve secp384r1
-    NIST_P384 = ('1.3.132.0.34', ec.SECP384R1)
-    #: NIST P-521, also known as SECG curve secp521r1
-    NIST_P521 = ('1.3.132.0.35', ec.SECP521R1)
-    #: Brainpool Standard Curve, 256-bit
-    #:
-    #: .. note::
-    #:     Requires OpenSSL >= 1.0.2
-    Brainpool_P256 = ('1.3.36.3.3.2.8.1.1.7', BrainpoolP256R1)
-    #: Brainpool Standard Curve, 384-bit
-    #:
-    #: .. note::
-    #:     Requires OpenSSL >= 1.0.2
-    Brainpool_P384 = ('1.3.36.3.3.2.8.1.1.11', BrainpoolP384R1)
-    #: Brainpool Standard Curve, 512-bit
-    #:
-    #: .. note::
-    #:     Requires OpenSSL >= 1.0.2
-    Brainpool_P512 = ('1.3.36.3.3.2.8.1.1.13', BrainpoolP512R1)
-    #: SECG curve secp256k1
-    SECP256K1 = ('1.3.132.0.10', ec.SECP256K1)
-
-    def __new__(cls, oid, curve=None):
-        # preprocessing stage for enum members:
-        #  - set enum_member.value to ObjectIdentifier(oid)
-        #  - if curve is not None and curve.name is in ec._CURVE_TYPES, set enum_member.curve to curve
-        #  - otherwise, set enum_member.curve to None
-        obj = object.__new__(cls)
-        obj._value_ = ObjectIdentifier(oid)
-        obj.curve = None
-
-        if curve is not None and curve.name in ec._CURVE_TYPES:
-            obj.curve = curve
-
-        return obj
+class SecurityIssues(IntFlag):
+    OK = 0
+    WrongSig = (1 << 0)
+    Expired = (1 << 1)
+    Disabled = (1 << 2)
+    Revoked = (1 << 3)
+    Invalid = (1 << 4)
+    BrokenAsymmetricFunc = (1 << 5)
+    HashFunctionNotCollisionResistant = (1 << 6)
+    HashFunctionNotSecondPreimageResistant = (1 << 7)
+    AsymmetricKeyLengthIsTooShort = (1 << 8)
+    InsecureCurve = (1 << 9)
+    NoSelfSignature = (1 << 10)
 
     @property
-    def can_gen(self):
-        return self.curve is not None
+    def causes_signature_verify_to_fail(self) -> bool:
+        return self in {
+            SecurityIssues.WrongSig,
+            SecurityIssues.Expired,
+            SecurityIssues.Disabled,
+            SecurityIssues.Invalid,
+            SecurityIssues.NoSelfSignature,
+        }
+
+class HashAlgorithm(IntEnum):
+    """Supported hash algorithms."""
+    Invalid = 0x00
+    MD5 = 0x01
+    SHA1 = 0x02
+    RIPEMD160 = 0x03
+    _reserved_1 = 0x04
+    _reserved_2 = 0x05
+    _reserved_3 = 0x06
+    _reserved_4 = 0x07
+    SHA256 = 0x08
+    SHA384 = 0x09
+    SHA512 = 0x0A
+    SHA224 = 0x0B
+    #SHA3_256 = 13
+    #SHA3_384 = 14
+    #SHA3_512 = 15
 
     @property
-    def key_size(self):
-        if self.curve is not None:
-            return self.curve.key_size
+    def hasher(self):
+        return hashlib.new(self.name)
 
     @property
-    def kdf_halg(self):
-        # return the hash algorithm to specify in the KDF fields when generating a key
-        algs = {256: HashAlgorithm.SHA256,
-                384: HashAlgorithm.SHA384,
-                512: HashAlgorithm.SHA512,
-                521: HashAlgorithm.SHA512}
-
-        return algs.get(self.key_size, None)
+    def digest_size(self) -> int:
+        return self.hasher.digest_size
 
     @property
-    def kek_alg(self):
-        # return the AES algorithm to specify in the KDF fields when generating a key
-        algs = {256: SymmetricKeyAlgorithm.AES128,
-                384: SymmetricKeyAlgorithm.AES192,
-                512: SymmetricKeyAlgorithm.AES256,
-                521: SymmetricKeyAlgorithm.AES256}
+    def is_supported(self) -> bool:
+        return True
 
-        return algs.get(self.key_size, None)
+    @property
+    def is_second_preimage_resistant(self) -> bool:
+        return self in {HashAlgorithm.SHA1}
 
+    @property
+    def is_collision_resistant(self) -> bool:
+        return self in {HashAlgorithm.SHA256, HashAlgorithm.SHA384, HashAlgorithm.SHA512}
 
-class ECPointFormat(IntEnum):
-    # https://tools.ietf.org/html/draft-ietf-openpgp-rfc4880bis-07#appendix-B
-    Standard = 0x04
-    Native = 0x40
-    OnlyX = 0x41
-    OnlyY = 0x42
+    @property
+    def is_considered_secure(self) -> SecurityIssues:
+        if self.is_collision_resistant:
+            return SecurityIssues.OK
 
+        warnings.warn('Hash function {hash} is not considered collision resistant'.format(hash=repr(self)))
+        issues = SecurityIssues.HashFunctionNotCollisionResistant
 
-class PacketTag(IntEnum):
-    Invalid = 0
-    PublicKeyEncryptedSessionKey = 1
-    Signature = 2
-    SymmetricKeyEncryptedSessionKey = 3
-    OnePassSignature = 4
-    SecretKey = 5
-    PublicKey = 6
-    SecretSubKey = 7
-    CompressedData = 8
-    SymmetricallyEncryptedData = 9
-    Marker = 10
-    LiteralData = 11
-    Trust = 12
-    UserID = 13
-    PublicSubKey = 14
-    UserAttribute = 17
-    SymmetricallyEncryptedIntegrityProtectedData = 18
-    ModificationDetectionCode = 19
+        if not self.is_second_preimage_resistant:
+            issues |= SecurityIssues.HashFunctionNotSecondPreimageResistant
+
+        return issues
 
 
 class SymmetricKeyAlgorithm(IntEnum):
@@ -210,20 +180,20 @@ class SymmetricKeyAlgorithm(IntEnum):
         raise NotImplementedError(repr(self))
 
     @property
-    def is_supported(self):
+    def is_supported(self) -> bool:
         return callable(self.cipher)
 
     @property
-    def is_insecure(self):
+    def is_insecure(self) -> bool:
         insecure_ciphers = {SymmetricKeyAlgorithm.IDEA}
         return self in insecure_ciphers
 
     @property
-    def block_size(self):
+    def block_size(self) -> int:
         return self.cipher.block_size
 
     @property
-    def key_size(self):
+    def key_size(self) -> int:
         ks = {SymmetricKeyAlgorithm.IDEA: 128,
               SymmetricKeyAlgorithm.TripleDES: 192,
               SymmetricKeyAlgorithm.CAST5: 128,
@@ -241,11 +211,124 @@ class SymmetricKeyAlgorithm(IntEnum):
 
         raise NotImplementedError(repr(self))
 
-    def gen_iv(self):
+    def gen_iv(self) -> bytes:
         return os.urandom(self.block_size // 8)
 
-    def gen_key(self):
+    def gen_key(self) -> bytes:
         return os.urandom(self.key_size // 8)
+
+
+class EllipticCurveOID(Enum):
+    """OIDs for supported elliptic curves."""
+    # these are specified as:
+    # id = (oid, curve)
+    Invalid = ('', )
+    #: DJB's fast elliptic curve
+    Curve25519 = ('1.3.6.1.4.1.3029.1.5.1', X25519)
+    #: Twisted Edwards variant of Curve25519
+    Ed25519 = ('1.3.6.1.4.1.11591.15.1', Ed25519)
+    #: NIST P-256, also known as SECG curve secp256r1
+    NIST_P256 = ('1.2.840.10045.3.1.7', ec.SECP256R1)
+    #: NIST P-384, also known as SECG curve secp384r1
+    NIST_P384 = ('1.3.132.0.34', ec.SECP384R1)
+    #: NIST P-521, also known as SECG curve secp521r1
+    NIST_P521 = ('1.3.132.0.35', ec.SECP521R1)
+    #: Brainpool Standard Curve, 256-bit
+    #:
+    #: .. note::
+    #:     Requires OpenSSL >= 1.0.2
+    Brainpool_P256 = ('1.3.36.3.3.2.8.1.1.7', BrainpoolP256R1)
+    #: Brainpool Standard Curve, 384-bit
+    #:
+    #: .. note::
+    #:     Requires OpenSSL >= 1.0.2
+    Brainpool_P384 = ('1.3.36.3.3.2.8.1.1.11', BrainpoolP384R1)
+    #: Brainpool Standard Curve, 512-bit
+    #:
+    #: .. note::
+    #:     Requires OpenSSL >= 1.0.2
+    Brainpool_P512 = ('1.3.36.3.3.2.8.1.1.13', BrainpoolP512R1)
+    #: SECG curve secp256k1
+    SECP256K1 = ('1.3.132.0.10', ec.SECP256K1)
+
+    def __new__(cls, oid, curve=None) -> "EllipticCurveOID":
+        # preprocessing stage for enum members:
+        #  - set enum_member.value to ObjectIdentifier(oid)
+        #  - if curve is not None and curve.name is in ec._CURVE_TYPES, set enum_member.curve to curve
+        #  - otherwise, set enum_member.curve to None
+        obj = object.__new__(cls)
+        obj._value_ = ObjectIdentifier(oid)
+        obj.curve = None
+
+        if curve is not None and curve.name in ec._CURVE_TYPES:
+            obj.curve = curve
+
+        return obj
+
+    @property
+    def can_gen(self) -> bool:
+        return self.curve is not None
+
+    @property
+    def key_size(self) -> Optional[int]:
+        if self.curve is not None:
+            return self.curve.key_size
+        return None
+
+    @property
+    def kdf_halg(self) -> Optional[HashAlgorithm]:
+        # return the hash algorithm to specify in the KDF fields when generating a key
+        algs = {256: HashAlgorithm.SHA256,
+                384: HashAlgorithm.SHA384,
+                512: HashAlgorithm.SHA512,
+                521: HashAlgorithm.SHA512}
+
+        ksz = self.key_size
+        if ksz is None:
+            return None
+        return algs.get(ksz, None)
+
+    @property
+    def kek_alg(self) -> Optional[SymmetricKeyAlgorithm]:
+        # return the AES algorithm to specify in the KDF fields when generating a key
+        algs = {256: SymmetricKeyAlgorithm.AES128,
+                384: SymmetricKeyAlgorithm.AES192,
+                512: SymmetricKeyAlgorithm.AES256,
+                521: SymmetricKeyAlgorithm.AES256}
+
+        ksz = self.key_size
+        if ksz is None:
+            return None
+        return algs.get(ksz, None)
+
+
+class ECPointFormat(IntEnum):
+    # https://tools.ietf.org/html/draft-ietf-openpgp-rfc4880bis-07#appendix-B
+    Standard = 0x04
+    Native = 0x40
+    OnlyX = 0x41
+    OnlyY = 0x42
+
+
+class PacketTag(IntEnum):
+    Invalid = 0
+    PublicKeyEncryptedSessionKey = 1
+    Signature = 2
+    SymmetricKeyEncryptedSessionKey = 3
+    OnePassSignature = 4
+    SecretKey = 5
+    PublicKey = 6
+    SecretSubKey = 7
+    CompressedData = 8
+    SymmetricallyEncryptedData = 9
+    Marker = 10
+    LiteralData = 11
+    Trust = 12
+    UserID = 13
+    PublicSubKey = 14
+    UserAttribute = 17
+    SymmetricallyEncryptedIntegrityProtectedData = 18
+    ModificationDetectionCode = 19
 
 
 class PubKeyAlgorithm(IntEnum):
@@ -268,7 +351,7 @@ class PubKeyAlgorithm(IntEnum):
     EdDSA = 0x16  # https://tools.ietf.org/html/draft-koch-eddsa-for-openpgp-04
 
     @property
-    def can_gen(self):
+    def can_gen(self) -> bool:
         return self in {PubKeyAlgorithm.RSAEncryptOrSign,
                         PubKeyAlgorithm.DSA,
                         PubKeyAlgorithm.ECDSA,
@@ -276,20 +359,20 @@ class PubKeyAlgorithm(IntEnum):
                         PubKeyAlgorithm.EdDSA}
 
     @property
-    def can_encrypt(self):  # pragma: no cover
+    def can_encrypt(self) -> bool:  # pragma: no cover
         return self in {PubKeyAlgorithm.RSAEncryptOrSign, PubKeyAlgorithm.ElGamal, PubKeyAlgorithm.ECDH}
 
     @property
-    def can_sign(self):
+    def can_sign(self) -> bool:
         return self in {PubKeyAlgorithm.RSAEncryptOrSign, PubKeyAlgorithm.DSA, PubKeyAlgorithm.ECDSA, PubKeyAlgorithm.EdDSA}
 
     @property
-    def deprecated(self):
+    def deprecated(self) -> bool:
         return self in {PubKeyAlgorithm.RSAEncrypt,
                         PubKeyAlgorithm.RSASign,
                         PubKeyAlgorithm.FormerlyElGamalEncryptOrSign}
 
-    def validate_params(self, size):
+    def validate_params(self, size) -> SecurityIssues:
         min_size = MINIMUM_ASYMMETRIC_KEY_LENGTHS.get(self)
         if min_size is not None:
             if isinstance(min_size, set):
@@ -344,7 +427,7 @@ class CompressionAlgorithm(IntEnum):
     #: Bzip2
     BZ2 = 0x03
 
-    def compress(self, data):
+    def compress(self, data:bytes) -> bytes:
         if self is CompressionAlgorithm.Uncompressed:
             return data
 
@@ -359,7 +442,7 @@ class CompressionAlgorithm(IntEnum):
 
         raise NotImplementedError(self)
 
-    def decompress(self, data):
+    def decompress(self, data:bytes) -> bytes:
         if self is CompressionAlgorithm.Uncompressed:
             return data
 
@@ -373,58 +456,6 @@ class CompressionAlgorithm(IntEnum):
             return bz2.decompress(data)
 
         raise NotImplementedError(self)
-
-
-class HashAlgorithm(IntEnum):
-    """Supported hash algorithms."""
-    Invalid = 0x00
-    MD5 = 0x01
-    SHA1 = 0x02
-    RIPEMD160 = 0x03
-    _reserved_1 = 0x04
-    _reserved_2 = 0x05
-    _reserved_3 = 0x06
-    _reserved_4 = 0x07
-    SHA256 = 0x08
-    SHA384 = 0x09
-    SHA512 = 0x0A
-    SHA224 = 0x0B
-    #SHA3_256 = 13
-    #SHA3_384 = 14
-    #SHA3_512 = 15
-
-    @property
-    def hasher(self):
-        return hashlib.new(self.name)
-
-    @property
-    def digest_size(self):
-        return self.hasher.digest_size
-
-    @property
-    def is_supported(self):
-        return True
-
-    @property
-    def is_second_preimage_resistant(self):
-        return self in {HashAlgorithm.SHA1}
-
-    @property
-    def is_collision_resistant(self):
-        return self in {HashAlgorithm.SHA256, HashAlgorithm.SHA384, HashAlgorithm.SHA512}
-
-    @property
-    def is_considered_secure(self):
-        if self.is_collision_resistant:
-            return SecurityIssues.OK
-
-        warnings.warn('Hash function {hash} is not considered collision resistant'.format(hash=repr(self)))
-        issues = SecurityIssues.HashFunctionNotCollisionResistant
-
-        if not self.is_second_preimage_resistant:
-            issues |= SecurityIssues.HashFunctionNotSecondPreimageResistant
-
-        return issues
 
 
 class RevocationReason(IntEnum):
@@ -446,7 +477,7 @@ class ImageEncoding(IntEnum):
     JPEG = 0x01
 
     @classmethod
-    def encodingof(cls, imagebytes):
+    def encodingof(cls, imagebytes:bytes) -> "ImageEncoding":
         if imagebytes[6:10] in (b'JFIF', b'Exif') or imagebytes[:4] ==  b'\xff\xd8\xff\xdb':
             return ImageEncoding.JPEG
         return ImageEncoding.Unknown  # pragma: no cover
@@ -596,7 +627,7 @@ class Features(IntFlag):
     ModificationDetection = 0x01
 
     @classproperty
-    def pgpy_features(cls):
+    def pgpy_features(cls) -> "Features":
         return Features.ModificationDetection
 
 
@@ -614,31 +645,6 @@ class TrustFlags(IntFlag):
     SubRevoked = 0x40
     Disabled = 0x80
     PendingCheck = 0x100
-
-
-class SecurityIssues(IntFlag):
-    OK = 0
-    WrongSig = (1 << 0)
-    Expired = (1 << 1)
-    Disabled = (1 << 2)
-    Revoked = (1 << 3)
-    Invalid = (1 << 4)
-    BrokenAsymmetricFunc = (1 << 5)
-    HashFunctionNotCollisionResistant = (1 << 6)
-    HashFunctionNotSecondPreimageResistant = (1 << 7)
-    AsymmetricKeyLengthIsTooShort = (1 << 8)
-    InsecureCurve = (1 << 9)
-    NoSelfSignature = (1 << 10)
-
-    @property
-    def causes_signature_verify_to_fail(self):
-        return self in {
-            SecurityIssues.WrongSig,
-            SecurityIssues.Expired,
-            SecurityIssues.Disabled,
-            SecurityIssues.Invalid,
-            SecurityIssues.NoSelfSignature,
-        }
 
 
 # https://safecurves.cr.yp.to/
