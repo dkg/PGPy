@@ -20,6 +20,7 @@ from .fields import ECDSAPub, ECDSAPriv, ECDSASignature
 from .fields import ECDHPub, ECDHPriv, ECDHCipherText
 from .fields import EdDSAPub, EdDSAPriv, EdDSASignature
 from .fields import ElGCipherText, ElGPriv, ElGPub
+from .fields import CipherText
 from .fields import OpaquePubKey
 from .fields import OpaquePrivKey
 from .fields import OpaqueSignature
@@ -165,8 +166,14 @@ class PKESessionKeyV3(PKESessionKey):
     """
     __ver__ = 3
 
+    def __init__(self) -> None:
+        super().__init__()
+        self._encrypter:Optional[KeyID] = None
+        self.pkalg = 0
+        self.ct:Optional[CipherText] = None
+
     @sdproperty
-    def encrypter(self) -> KeyID:
+    def encrypter(self) -> Optional[KeyID]:
         return self._encrypter
 
     @encrypter.register
@@ -196,13 +203,7 @@ class PKESessionKeyV3(PKESessionKey):
         ct = _c.get(self._pkalg, None)
         self.ct = ct() if ct is not None else ct
 
-    def __init__(self):
-        super(PKESessionKeyV3, self).__init__()
-        self._encrypter:Optional[KeyID] = None
-        self.pkalg = 0
-        self.ct = None
-
-    def __bytearray__(self):
+    def __bytearray__(self) -> bytearray:
         _bytes = bytearray()
         _bytes += super(PKESessionKeyV3, self).__bytearray__()
         if self._encrypter is None:
@@ -210,10 +211,13 @@ class PKESessionKeyV3(PKESessionKey):
         else:
             _bytes += bytes(self._encrypter)
         _bytes += bytearray([self.pkalg])
-        _bytes += self.ct.__bytearray__() if self.ct is not None else b'\x00' * (self.header.length - 10)
+        if self.ct is None:
+            _bytes += b'\x00' * (self.header.length - 10)
+        else:
+            _bytes += self.ct.__bytearray__()
         return _bytes
 
-    def __copy__(self):
+    def __copy__(self) -> "PKESessionKeyV3":
         sk = self.__class__()
         sk.header = copy.copy(self.header)
         sk._encrypter = self._encrypter
@@ -224,7 +228,11 @@ class PKESessionKeyV3(PKESessionKey):
         return sk
 
     def decrypt_sk(self, pk) -> Tuple[Optional[SymmetricKeyAlgorithm],bytes]:
+        if self.ct is None:
+            raise ValueError("decrypt_sk failed with missing ciphertext")
         if self.pkalg == PubKeyAlgorithm.RSAEncryptOrSign:
+            if not isinstance(self.ct, RSACipherText):
+                raise TypeError(f"Wrong kind of ciphertext for RSA: {type(self.ct)}")
             # pad up ct with null bytes if necessary
             ct = self.ct.me_mod_n.to_mpibytes()[2:]
             ct = b'\x00' * ((pk.keymaterial.__privkey__().key_size // 8) - len(ct)) + ct
@@ -282,6 +290,9 @@ class PKESessionKeyV3(PKESessionKey):
 
         else:
             raise NotImplementedError(self.pkalg)
+
+        if self.ct is None:
+            raise NotImplementedError(f"Don't know how to create ciphertext for PKESKv3 {self.pkalg}")
 
         self.ct = self.ct.encrypt(encrypter, *encargs)
         self.update_hlen()
