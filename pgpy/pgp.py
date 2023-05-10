@@ -47,6 +47,8 @@ from .packet import MDC
 from .packet import Packet
 from .packet import Primary
 from .packet import Private
+from .packet import PubKey
+from .packet import PrivKey
 from .packet import PubKeyV4
 from .packet import PrivKeyV4
 from .packet import PrivSubKeyV4
@@ -1203,7 +1205,7 @@ class PGPMessage(Armorable, PGPObject):
 
         return msg
 
-    def encrypt(self, passphrase, sessionkey=None, **prefs):
+    def encrypt(self, passphrase:Union[str,bytes], sessionkey:Optional[bytes]=None, **prefs) -> "PGPMessage":
         """
         encrypt(passphrase, [sessionkey=None,] **prefs)
 
@@ -1641,7 +1643,7 @@ class PGPKey(Armorable, ParentRef, PGPObject):
 
         return key
 
-    def __init__(self):
+    def __init__(self) -> None:
         """
         PGPKey objects represent OpenPGP compliant keys along with all of their associated data.
 
@@ -1655,7 +1657,7 @@ class PGPKey(Armorable, ParentRef, PGPObject):
         of either of those methods.
         """
         super(PGPKey, self).__init__()
-        self._key = None
+        self._key:Optional[Union[PrivKey,PubKey]] = None
         self._children = FingerprintDict["PGPKey"]()
         self._signatures = SorteDeque()
         self._uids = SorteDeque()
@@ -1798,7 +1800,8 @@ class PGPKey(Armorable, ParentRef, PGPObject):
             prefs['hash_alg'] = posargs[1]
 
         for sk in itertools.chain([self], self.subkeys.values()):
-            sk._key.protect(passphrase, **prefs)
+            if isinstance(sk._key, PrivKey):
+                sk._key.protect(passphrase, **prefs)
 
         del passphrase
 
@@ -1960,7 +1963,7 @@ class PGPKey(Armorable, ParentRef, PGPObject):
 
         return next(self.self_signatures).key_flags
 
-    def _sign(self, subject, sig, **prefs):
+    def _sign(self, subject, sig:PGPSignature, **prefs) -> PGPSignature:
         """
         The actual signing magic happens here.
         :param subject: The subject to sign
@@ -2048,6 +2051,8 @@ class PGPKey(Armorable, ParentRef, PGPObject):
         h2.update(sigdata)
         sig._signature.hash2 = bytearray(h2.digest()[:2])
 
+        if not isinstance(self._key, PrivKey):
+            raise ValueError(f"Only private keys can sign ({type(self._key)})")
         _sig = self._key.sign(sigdata, getattr(hashes, sig.hash_algorithm.name)())
         if _sig is NotImplemented:
             raise NotImplementedError(self.key_algorithm)

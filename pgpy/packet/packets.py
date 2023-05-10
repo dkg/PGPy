@@ -760,6 +760,15 @@ class PrivKey(VersionedPacket, Primary, Private):
     __typeid__ = 0x05
     __ver__ = 0
 
+    @abc.abstractmethod
+    def protect(self, passphrase:str,
+                enc_alg:Optional[SymmetricKeyAlgorithm]=None,
+                hash_alg:Optional[HashAlgorithm]=None) -> None:
+        '''Protect the secret key'''
+
+    @abc.abstractmethod
+    def sign(self, sigdata, hash_alg):
+        '''make a cryptographic signature'''
 
 class PubKey(VersionedPacket, Primary, Public):
     __typeid__ = 0x06
@@ -946,13 +955,15 @@ class PrivKeyV4(PrivKey, PubKeyV4):
         return True  # pragma: no cover
 
     def protect(self, passphrase:str,
-                enc_alg:SymmetricKeyAlgorithm=SymmetricKeyAlgorithm.AES256,
-                hash_alg:HashAlgorithm=HashAlgorithm.SHA256) -> None:
+                enc_alg:Optional[SymmetricKeyAlgorithm]=None,
+                hash_alg:Optional[HashAlgorithm]=None) -> None:
+        if enc_alg is None:
+            enc_alg = SymmetricKeyAlgorithm.AES256
         self.keymaterial.encrypt_keyblob(passphrase, enc_alg, hash_alg)
         del passphrase
         self.update_hlen()
 
-    def unprotect(self, passphrase):
+    def unprotect(self, passphrase) -> None:
         self.keymaterial.decrypt_keyblob(passphrase)
         del passphrase
 
