@@ -54,6 +54,7 @@ from ..constants import String2KeyType
 from ..constants import S2KGNUExtension
 from ..constants import SymmetricKeyAlgorithm
 from ..constants import S2KUsage
+from ..constants import AEADMode
 
 from ..decorators import sdproperty
 
@@ -1044,6 +1045,20 @@ class String2Key(Field):
         self._encalg:Optional[SymmetricKeyAlgorithm] = SymmetricKeyAlgorithm(val)
 
     @sdproperty
+    def aead_mode(self) -> Optional[AEADMode]:
+        if self.usage == S2KUsage.AEAD:
+            if self._aead_mode is None:
+                self._aead_mode == AEADMode.OCB
+            return self._aead_mode
+        return None
+
+    @aead_mode.register
+    def aead_mode_int(self, val:Union[int,AEADMode]):
+        if self.usage != S2KUsage.AEAD:
+            raise PGPError(f"Cannot set AEAD mode for S2K usage {self.usage!r}")
+        self._aead_mode:Optional[AEADMode] = AEADMode(val)
+
+    @sdproperty
     def specifier(self) -> Optional[String2KeyType]:
         return self._specifier._specifier
 
@@ -1090,6 +1105,8 @@ class String2Key(Field):
                 # this is likely some sort of weird extension case
                 return 0
             return self.encalg.block_size // 8
+        elif self.usage == S2KUsage.AEAD:
+            return self.aead_mode.iv_len
         else:
             return SymmetricKeyAlgorithm(self.usage).block_size // 8
 
@@ -1133,6 +1150,7 @@ class String2Key(Field):
         super().__init__()
         self.usage:S2KUsage = S2KUsage.Unprotected
         self._encalg = None
+        self._aead_mode = None
         self._specifier:S2KSpecifier = S2KSpecifier()
         self._iv = None
 
@@ -1141,6 +1159,8 @@ class String2Key(Field):
         _bytes.append(self.usage)
         if bool(self):
             _bytes.append(self.encalg)
+            if self.usage == S2KUsage.AEAD:
+                _bytes.append(self.aead_mode)
             _bytes += self._specifier.__bytearray__()
             if self.iv is not None:
                 _bytes += self.iv
@@ -1150,7 +1170,10 @@ class String2Key(Field):
         return len(self.__bytearray__())
 
     def __bool__(self) -> bool:
-        return self.usage in [S2KUsage.CFB, S2KUsage.MalleableCFB]
+        # FIXME: what if usage octet is a cipher algorithm?  This is
+        # deprecated enough that it must not be generated, but we
+        # might want to handle it properly on decryption
+        return self.usage in [S2KUsage.AEAD, S2KUsage.CFB, S2KUsage.MalleableCFB]
 
     def __copy__(self) -> "String2Key":
         s2k = String2Key()
@@ -1177,8 +1200,8 @@ class String2Key(Field):
                     del packet[:(ivlen)]
 
     def derive_key(self, passphrase) -> bytes:
-        if self.usage not in [S2KUsage.CFB,S2KUsage.MalleableCFB]:
-            raise ValueError(f"can only derive key from String2Key object when usage octet is CFB or MalleableCFB, not {self.usage}")
+        if self.usage not in [S2KUsage.AEAD, S2KUsage.CFB, S2KUsage.MalleableCFB]:
+            raise ValueError(f"can only derive key from String2Key object when usage octet is AEAD, CFB, or MalleableCFB, not {self.usage!r}")
         if self.encalg is None:
             raise ValueError("cannot derive key from String2Key object when encalg is unset")
         return self._specifier.derive_key(passphrase, self.encalg.key_size)
