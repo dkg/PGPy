@@ -393,10 +393,6 @@ class HashAlgorithm(IntEnum):
     #SHA3_384 = 14
     #SHA3_512 = 15
 
-    def __init__(self, *args):
-        super(self.__class__, self).__init__()
-        self._tuned_count = 255
-
     @property
     def hasher(self):
         return hashlib.new(self.name)
@@ -404,10 +400,6 @@ class HashAlgorithm(IntEnum):
     @property
     def digest_size(self):
         return self.hasher.digest_size
-
-    @property
-    def tuned_count(self):
-        return self._tuned_count
 
     @property
     def is_supported(self):
