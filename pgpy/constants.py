@@ -19,7 +19,6 @@ from cryptography.hazmat.backends import openssl
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.ciphers import algorithms
 
-from .types import FlagEnum
 from .decorators import classproperty
 from ._curves import BrainpoolP256R1, BrainpoolP384R1, BrainpoolP512R1, X25519, Ed25519
 
@@ -523,7 +522,7 @@ class SignatureType(IntEnum):
     ThirdParty_Confirmation = 0x50
 
 
-class KeyServerPreferences(FlagEnum):
+class KeyServerPreferences(IntFlag):
     NoModify = 0x80
 
 
@@ -550,7 +549,7 @@ class TrustLevel(IntEnum):
     Ultimate = 6
 
 
-class KeyFlags(FlagEnum):
+class KeyFlags(IntFlag):
     """Flags that determine a key's capabilities."""
     #: Signifies that a key may be used to certify keys and user ids. Primary keys always have this, even if it is not specified.
     Certify = 0x01
@@ -569,7 +568,7 @@ class KeyFlags(FlagEnum):
     MultiPerson = 0x80
 
 
-class Features(FlagEnum):
+class Features(IntFlag):
     ModificationDetection = 0x01
 
     @classproperty
@@ -577,16 +576,16 @@ class Features(FlagEnum):
         return Features.ModificationDetection
 
 
-class RevocationKeyClass(FlagEnum):
+class RevocationKeyClass(IntFlag):
     Sensitive = 0x40
     Normal = 0x80
 
 
-class NotationDataFlags(FlagEnum):
+class NotationDataFlags(IntFlag):
     HumanReadable = 0x80
 
 
-class TrustFlags(FlagEnum):
+class TrustFlags(IntFlag):
     Revoked = 0x20
     SubRevoked = 0x40
     Disabled = 0x80
