@@ -23,7 +23,6 @@ from .decorators import classproperty
 from ._curves import BrainpoolP256R1, BrainpoolP384R1, BrainpoolP512R1, X25519, Ed25519
 
 __all__ = [
-    'Backend',
     'EllipticCurveOID',
     'ECPointFormat',
     'PacketTag',
@@ -50,10 +49,6 @@ __all__ = [
 
 # this is 50 KiB
 _hashtunedata = bytearray([10, 11, 12, 13, 14, 15, 16, 17] * 128 * 50)
-
-
-class Backend(Enum):
-    OpenSSL = openssl.backend
 
 
 class EllipticCurveOID(Enum):
