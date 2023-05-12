@@ -37,6 +37,7 @@ from .types import Public
 from .types import Sub
 from .types import VersionedPacket
 
+from ..constants import PacketTag
 from ..constants import CompressionAlgorithm
 from ..constants import HashAlgorithm
 from ..constants import PubKeyAlgorithm
@@ -83,7 +84,7 @@ __all__ = ['PKESessionKey',
            'MDC']
 
 class PKESessionKey(VersionedPacket):
-    __typeid__ = 0x01
+    __typeid__ = PacketTag.PublicKeyEncryptedSessionKey
     __ver__ = 0
 
     # note that we don't have a good type signature for pk: it should be PrivKey, but from .fields, not the PrivKey in this file.
@@ -313,7 +314,7 @@ class PKESessionKeyV3(PKESessionKey):
 
 
 class Signature(VersionedPacket):
-    __typeid__ = 0x02
+    __typeid__ = PacketTag.Signature
     __ver__ = 0
 
 
@@ -509,7 +510,7 @@ class SignatureV4(Signature):
 
 
 class SKESessionKey(VersionedPacket):
-    __typeid__ = 0x03
+    __typeid__ = PacketTag.SymmetricKeyEncryptedSessionKey
     __ver__ = 0
 
     # FIXME: the type signature for this function is awkward because
@@ -645,7 +646,7 @@ class SKESessionKeyV4(SKESessionKey):
 
 
 class OnePassSignature(VersionedPacket):
-    __typeid__ = 0x04
+    __typeid__ = PacketTag.OnePassSignature
     __ver__ = 0
 
 
@@ -769,7 +770,7 @@ class OnePassSignatureV3(OnePassSignature):
 
 
 class PrivKey(VersionedPacket, Primary, Private):
-    __typeid__ = 0x05
+    __typeid__ = PacketTag.SecretKey
     __ver__ = 0
 
     @abc.abstractmethod
@@ -785,7 +786,7 @@ class PrivKey(VersionedPacket, Primary, Private):
         '''make a cryptographic signature'''
 
 class PubKey(VersionedPacket, Primary, Public):
-    __typeid__ = 0x06
+    __typeid__ = PacketTag.PublicKey
     __ver__ = 0
 
 
@@ -988,7 +989,7 @@ class PrivKeyV4(PrivKey, PubKeyV4):
 
 
 class PrivSubKey(VersionedPacket, Sub, Private):
-    __typeid__ = 0x07
+    __typeid__ = PacketTag.SecretSubKey
     __ver__ = 0
 
 
@@ -1026,7 +1027,7 @@ class CompressedData(Packet):
     BZip2-compressed packets are compressed using the BZip2 [BZ2]
     algorithm.
     """
-    __typeid__ = 0x08
+    __typeid__ = PacketTag.CompressedData
 
     @sdproperty
     def calg(self):
@@ -1110,7 +1111,7 @@ class SKEData(Packet):
     incorrect.  See the "Security Considerations" section for hints on
     the proper use of this "quick check".
     """
-    __typeid__ = 0x09
+    __typeid__ = PacketTag.SymmetricallyEncryptedData
 
     def __init__(self):
         super(SKEData, self).__init__()
@@ -1154,7 +1155,7 @@ class SKEData(Packet):
 
 
 class Marker(Packet):
-    __typeid__ = 0x0a
+    __typeid__ = PacketTag.Marker
 
     def __init__(self):
         super(Marker, self).__init__()
@@ -1218,7 +1219,7 @@ class LiteralData(Packet):
        normal line endings).  These should be converted to native line
        endings by the receiving software.
     """
-    __typeid__ = 0x0B
+    __typeid__ = PacketTag.LiteralData
 
     @sdproperty
     def mtime(self):
@@ -1309,7 +1310,7 @@ class Trust(Packet):
     transferred to other users, and they SHOULD be ignored on any input
     other than local keyring files.
     """
-    __typeid__ = 0x0C
+    __typeid__ = PacketTag.Trust
 
     @sdproperty
     def trustlevel(self):
@@ -1365,7 +1366,7 @@ class UserID(Packet):
     restrictions on its content.  The packet length in the header
     specifies the length of the User ID.
     """
-    __typeid__ = 0x0D
+    __typeid__ = PacketTag.UserID
 
     def __init__(self, uid=""):
         super(UserID, self).__init__()
@@ -1400,7 +1401,7 @@ class UserID(Packet):
 
 
 class PubSubKey(VersionedPacket, Sub, Public):
-    __typeid__ = 0x0E
+    __typeid__ = PacketTag.PublicSubKey
     __ver__ = 0
 
 
@@ -1441,7 +1442,7 @@ class UserAttribute(Packet):
     not recognize.  Subpacket types 100 through 110 are reserved for
     private or experimental use.
     """
-    __typeid__ = 0x11
+    __typeid__ = PacketTag.UserAttribute
 
     @property
     def image(self):
@@ -1472,7 +1473,7 @@ class UserAttribute(Packet):
 
 
 class IntegrityProtectedSKEData(VersionedPacket):
-    __typeid__ = 0x12
+    __typeid__ = PacketTag.SymmetricallyEncryptedIntegrityProtectedData
     __ver__ = 0
 
 
@@ -1659,7 +1660,7 @@ class MDC(Packet):
     in the data hash.  While this is a bit restrictive, it reduces
     complexity.
     """
-    __typeid__ = 0x13
+    __typeid__ = PacketTag.ModificationDetectionCode
 
     def __init__(self):
         super(MDC, self).__init__()

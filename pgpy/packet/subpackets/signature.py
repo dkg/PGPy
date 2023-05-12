@@ -26,6 +26,7 @@ from ...constants import NotationDataFlags
 from ...constants import PubKeyAlgorithm
 from ...constants import RevocationKeyClass
 from ...constants import RevocationReason
+from ...constants import SigSubpacketType
 from ...constants import SymmetricKeyAlgorithm
 
 from ...decorators import sdproperty
@@ -214,7 +215,7 @@ class CreationTime(Signature):
 
     MUST be present in the hashed area.
    """
-    __typeid__ = 0x02
+    __typeid__ = SigSubpacketType.CreationTime
 
     @sdproperty
     def created(self):
@@ -259,7 +260,7 @@ class SignatureExpirationTime(Signature):
     after the signature creation time that the signature expires.  If
     this is not present or has a value of zero, it never expires.
     """
-    __typeid__ = 0x03
+    __typeid__ = SigSubpacketType.SigExpirationTime
 
     @sdproperty
     def expires(self):
@@ -322,7 +323,7 @@ class ExportableCertification(Boolean):
     (for example, a key server).  Such implementations always trim local
     certifications from any key they handle.
     """
-    __typeid__ = 0x04
+    __typeid__ = SigSubpacketType.ExportableCertification
 
 
 class TrustSignature(Signature):
@@ -344,7 +345,7 @@ class TrustSignature(Signature):
     greater indicate complete trust.  Implementations SHOULD emit values
     of 60 for partial trust and 120 for complete trust.
     """
-    __typeid__ = 0x05
+    __typeid__ = SigSubpacketType.TrustSignature
 
     @sdproperty
     def level(self):
@@ -404,7 +405,7 @@ class RegularExpression(Signature):
     "almost public domain" regular expression [REGEX] package.  A
     description of the syntax is found in Section 8 below.
     """
-    __typeid__ = 0x06
+    __typeid__ = SigSubpacketType.RegularExpression
 
     @sdproperty
     def regex(self):
@@ -446,7 +447,7 @@ class Revocable(Boolean):
     signature for the life of his key.  If this packet is not present,
     the signature is revocable.
     """
-    __typeid__ = 0x07
+    __typeid__ = SigSubpacketType.Revocable
 
 
 class KeyExpirationTime(SignatureExpirationTime):
@@ -460,7 +461,7 @@ class KeyExpirationTime(SignatureExpirationTime):
     or has a value of zero, the key never expires.  This is found only on
     a self-signature.
     """
-    __typeid__ = 0x09
+    __typeid__ = SigSubpacketType.KeyExpirationTime
 
 
 class PreferredSymmetricAlgorithms(FlagList):
@@ -476,7 +477,7 @@ class PreferredSymmetricAlgorithms(FlagList):
     Algorithm numbers are in Section 9.  This is only found on a self-
     signature.
     """
-    __typeid__ = 0x0B
+    __typeid__ = SigSubpacketType.PreferredSymmetricAlgorithms
     __flags__ = SymmetricKeyAlgorithm
 
 
@@ -503,7 +504,7 @@ class RevocationKey(Signature):
     isolate this subpacket within a separate signature so that it is not
     combined with other subpackets that need to be exported.
     """
-    __typeid__ = 0x0C
+    __typeid__ = SigSubpacketType.RevocationKey
 
     @sdproperty
     def keyclass(self):
@@ -573,7 +574,7 @@ class RevocationKey(Signature):
 
 
 class Issuer(Signature):
-    __typeid__ = 0x10
+    __typeid__ = SigSubpacketType.IssuerKeyID
 
     @sdproperty
     def issuer(self) -> KeyID:
@@ -605,7 +606,7 @@ class Issuer(Signature):
 
 
 class NotationData(Signature):
-    __typeid__ = 0x14
+    __typeid__ = SigSubpacketType.NotationData
 
     @sdproperty
     def flags(self):
@@ -683,26 +684,26 @@ class NotationData(Signature):
 
 
 class PreferredHashAlgorithms(FlagList):
-    __typeid__ = 0x15
+    __typeid__ = SigSubpacketType.PreferredHashAlgorithms
     __flags__ = HashAlgorithm
 
 
 class PreferredCompressionAlgorithms(FlagList):
-    __typeid__ = 0x16
+    __typeid__ = SigSubpacketType.PreferredCompressionAlgorithms
     __flags__ = CompressionAlgorithm
 
 
 class KeyServerPreferences(ByteFlag):
-    __typeid__ = 0x17
+    __typeid__ = SigSubpacketType.KeyServerPreferences
     __flags__ = _KeyServerPreferences
 
 
 class PreferredKeyServer(URI):
-    __typeid__ = 0x18
+    __typeid__ = SigSubpacketType.PreferredKeyServer
 
 
 class PrimaryUserID(Signature):
-    __typeid__ = 0x19
+    __typeid__ = SigSubpacketType.PrimaryUserID
 
     @sdproperty
     def primary(self):
@@ -735,16 +736,16 @@ class PrimaryUserID(Signature):
 
 
 class Policy(URI):
-    __typeid__ = 0x1a
+    __typeid__ = SigSubpacketType.PolicyURI
 
 
 class KeyFlags(ByteFlag):
-    __typeid__ = 0x1B
+    __typeid__ = SigSubpacketType.KeyFlags
     __flags__ = _KeyFlags
 
 
 class SignersUserID(Signature):
-    __typeid__ = 0x1C
+    __typeid__ = SigSubpacketType.SignersUserID
 
     @sdproperty
     def userid(self):
@@ -774,7 +775,7 @@ class SignersUserID(Signature):
 
 
 class ReasonForRevocation(Signature):
-    __typeid__ = 0x1D
+    __typeid__ = SigSubpacketType.ReasonForRevocation
 
     @sdproperty
     def code(self):
@@ -821,7 +822,7 @@ class ReasonForRevocation(Signature):
 
 
 class Features(ByteFlag):
-    __typeid__ = 0x1E
+    __typeid__ = SigSubpacketType.Features
     __flags__ = _Features
 
 
@@ -829,7 +830,7 @@ class Features(ByteFlag):
 
 
 class EmbeddedSignature(Signature):
-    __typeid__ = 0x20
+    __typeid__ = SigSubpacketType.EmbeddedSignature
 
     @sdproperty
     def _sig(self):
@@ -905,7 +906,7 @@ class IssuerFingerprint(Signature):
     does not match the signature version, the receiving implementation
     MUST treat it as a malformed signature (see Section 5.2.5).
     '''
-    __typeid__ = 0x21
+    __typeid__ = SigSubpacketType.IssuerFingerprint
 
     def __init__(self) -> None:
         super(IssuerFingerprint, self).__init__()
@@ -959,7 +960,7 @@ class IntendedRecipient(Signature):
     An implementation SHOULD generate this subpacket when creating a
     signed and encrypted message.
     '''
-    __typeid__ = 0x23
+    __typeid__ = SigSubpacketType.IntendedRecipientFingerprint
 
     def __init__(self) -> None:
         super(IntendedRecipient, self).__init__()
@@ -1067,7 +1068,7 @@ class AttestedCertifications(Signature):
     key holder needs only to publish a more recent Attestation Key
     Signature with an empty Attested Certifications subpacket.
     '''
-    __typeid__ = 0x25
+    __typeid__ = SigSubpacketType.AttestedCertifications
 
     @sdproperty
     def attested_certifications(self):
