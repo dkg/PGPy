@@ -168,9 +168,11 @@ class PKESessionKeyV3(PKESessionKey):
     def encrypter(self) -> KeyID:
         return self._encrypter
 
-    @encrypter.register(bytearray)
-    def encrypter_bin(self, val):
-        if val == b'\x00'*8:
+    @encrypter.register
+    def encrypter_bin(self, val:Union[bytearray,KeyID]) -> None:
+        if isinstance(val, KeyID):
+            self._encrypter = val
+        elif val == b'\x00'*8:
             self._encrypter = None
         else:
             self._encrypter = KeyID(val)
