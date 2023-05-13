@@ -765,10 +765,6 @@ class PubKey(VersionedPacket, Primary, Public):
     __typeid__ = 0x06
     __ver__ = 0
 
-    @abc.abstractproperty
-    def fingerprint(self) -> Fingerprint:
-        """compute and return the fingerprint of the key"""
-
 
 class PubKeyV4(PubKey):
     __ver__ = 4

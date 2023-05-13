@@ -1410,10 +1410,11 @@ class PGPKey(Armorable, ParentRef, PGPObject):
         return None
 
     @property
-    def fingerprint(self):
+    def fingerprint(self) -> Optional[Fingerprint]:
         """The fingerprint of this key, as a :py:obj:`~pgpy.types.Fingerprint` object."""
         if self._key:
             return self._key.fingerprint
+        return None
 
     @property
     def hashdata(self):
@@ -2421,9 +2422,13 @@ class PGPKey(Armorable, ParentRef, PGPObject):
 
     def issuer_matches(self, sig:PGPSignature) -> bool:
         '''Returns true if the signature indicates that it was made by this key or one of its subkeys'''
-        if sig.signer_fingerprint is not None and (sig.signer_fingerprint == self.fingerprint or sig.signer_fingerprint in self._children):
+        if sig.signer_fingerprint is not None and (
+                (self.fingerprint is not None and sig.signer_fingerprint == self.fingerprint) or
+                sig.signer_fingerprint in self._children):
             return True
-        if sig.signer is not None and sig.signer == self.fingerprint.keyid or sig.signer in self._children:
+        if sig.signer is not None and (
+                (self.fingerprint is not None and sig.signer == self.fingerprint.keyid) or
+                sig.signer in self._children):
             return True
         return False
 
@@ -2573,7 +2578,10 @@ class PGPKey(Armorable, ParentRef, PGPObject):
 
         # set up a new PKESessionKeyV3
         pkesk = PKESessionKeyV3()
-        pkesk.encrypter = bytearray(binascii.unhexlify(self.fingerprint.keyid.encode('latin-1')))
+        if self.fingerprint is None:
+            pkesk.encrypter = KeyID(b'\x00' * 8)
+        else:
+            pkesk.encrypter = self.fingerprint.keyid
         pkesk.pkalg = self.key_algorithm
         pkesk.encrypt_sk(self._key, cipher_algo, sessionkey)
 

@@ -13,6 +13,7 @@ from ..decorators import sdproperty
 
 from ..types import Dispatchable
 from ..types import Field
+from ..types import Fingerprint
 from ..types import Header as _Header
 
 from ..constants import PubKeyAlgorithm
@@ -219,6 +220,9 @@ class Opaque(Packet):
 
 # key marker classes for convenience
 class Key(object):
+    @abc.abstractproperty
+    def fingerprint(self) -> Fingerprint:
+        """The fingerprint of the key"""
 
     @abc.abstractproperty
     def pkalg(self) -> PubKeyAlgorithm:
