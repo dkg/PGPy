@@ -9,6 +9,14 @@ v0.7.0
 
 (not yet released)
 
+Dependency changes
+------------------
+
+pyasn1 is no longer needed
+
+Now depends transitively (via the cryptography module) on OpenSSL
+1.1.1 or later for Brainpool, X25519, Ed25519.
+
 API changes
 -----------
 
@@ -41,6 +49,9 @@ PGPKey.protect() now no longer requires you to specify a choice of
 algorithms.  PGPy will make good decisions by default, and you should
 not indicate specific algorithms unless you have a very clear reason
 to do so.
+
+EllipticCurveOID.Invalid was removed -- EllipticCurveOID only
+enumerates supported curves now.
 
 v0.6.0
 ======
