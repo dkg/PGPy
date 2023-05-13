@@ -15,6 +15,8 @@ from ..types import Dispatchable
 from ..types import Field
 from ..types import Header as _Header
 
+from ..constants import PubKeyAlgorithm
+
 __all__ = ['Header',
            'VersionedHeader',
            'Packet',
@@ -217,15 +219,27 @@ class Opaque(Packet):
 
 # key marker classes for convenience
 class Key(object):
-    pass
 
+    @abc.abstractproperty
+    def pkalg(self) -> PubKeyAlgorithm:
+        """The public key algorithm of the key"""
 
 class Public(Key):
     pass
 
 
 class Private(Key):
-    pass
+    @abc.abstractproperty
+    def pubkey(self) -> Public:
+        """compute and return the fingerprint of the key"""
+
+    @abc.abstractproperty
+    def protected(self) -> bool:
+        """Whether the secret key material is protected by a password"""
+
+    @abc.abstractproperty
+    def unlocked(self) -> bool:
+        """Is the secret key material is protected and also unlocked for use?"""
 
 
 class Primary(Key):

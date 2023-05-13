@@ -13,7 +13,7 @@ import os
 
 import collections.abc
 
-from typing import Tuple
+from typing import Tuple, Union
 
 from pyasn1.codec.der import decoder
 from pyasn1.codec.der import encoder
@@ -1150,13 +1150,13 @@ class PrivKey(PubKey):
         """return the requisite *PrivateKey class from the cryptography library"""
 
     @abc.abstractmethod
-    def _generate(self, key_size):
+    def _generate(self, key_size_or_oid:Union[int,EllipticCurveOID]) -> None:
         """Generate a new PrivKey"""
 
     def _compute_chksum(self):
         "Calculate the key checksum"
 
-    def publen(self):
+    def publen(self) -> int:
         return super(PrivKey, self).__len__()
 
     def encrypt_keyblob(self, passphrase, enc_alg, hash_alg):
@@ -1422,7 +1422,7 @@ class ECDSAPriv(PrivKey, ECDSAPub):
         ecp = ec.EllipticCurvePublicNumbers(self.p.x, self.p.y, self.oid.curve())
         return ec.EllipticCurvePrivateNumbers(self.s, ecp).private_key(default_backend())
 
-    def _compute_chksum(self):
+    def _compute_chksum(self) -> None:
         chs = sum(bytearray(self.s.to_mpibytes())) % 65536
         self.chksum = bytearray(self.int_to_bytes(chs, 2))
 
