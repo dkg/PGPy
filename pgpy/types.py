@@ -707,7 +707,7 @@ class KeyID(str):
         return f"KeyID({self})"
 
 
-class Fingerprint(str):
+class Fingerprint(str, object):
     """
     A subclass of ``str``. Can be compared using == and != to ``str``, ``unicode``, and other :py:obj:`Fingerprint` instances.
 
@@ -715,7 +715,12 @@ class Fingerprint(str):
     """
     @property
     def keyid(self) -> KeyID:
-        return KeyID(self[-16:])
+        if self._version == 4:
+            return KeyID(self[-16:])
+        elif self._version == 6:
+            return KeyID(self[:16])
+        else:
+            raise ValueError(f"Do not know how to calculate a keyID for fingerprint version {self._version}.")
 
     @property
     def shortid(self) -> str:
@@ -725,7 +730,7 @@ class Fingerprint(str):
 
     @sdproperty
     def version(self) -> int:
-        'Returns None if the version is unknown'
+        'Returns the version of the key that produced this fingerprint'
         return self._version
 
     @version.register
@@ -734,18 +739,39 @@ class Fingerprint(str):
 
     def __new__(cls, content:Union[str,bytes,bytearray], version=None) -> "Fingerprint":
         if isinstance(content, Fingerprint):
+            if version is not None and version != content.version:
+                raise ValueError(f"requested version {version} but existing Fingerprint is version {content.version}")
             return content
 
         if isinstance(content, (bytes, bytearray)):
-            if len(content) != 20:
-                raise ValueError(f'binary Fingerprint must be 20 bytes, not {len(content)}')
-            return Fingerprint(binascii.b2a_hex(content).decode('latin-1').upper())
+            if len(content) == 20:
+                if version is not None and version != 4:
+                    raise ValueError(f'got 20 bytes, but version {version} fingerprint requested.')
+                version = 4
+            elif len(content) == 32:
+                if version is not None and version != 6:
+                    raise ValueError(f'got 32 bytes, but version {version} fingerprint requested.')
+                version = 6
+            else:
+                raise ValueError(f'expected 20 or 32 bytes, not {len(content)}')
+            return Fingerprint(binascii.b2a_hex(content).decode('latin-1').upper(), version=version)
+
         # validate input before continuing: this should be a string of 40 hex digits
-        content = content.upper().replace(' ', '')
-        if not re.match(r'^[0-9A-F]{40}$', content):
-            raise ValueError('Fingerprint must be a string of 40 hex digits')
+        content = content.upper().replace(' ', '').upper()
+        if not re.match(r'^[0-9A-F]{40,64}$', content):
+            raise ValueError('Fingerprint must be a string of 40 or 64 hex digits')
+        if len(content) == 40:
+            if version is not None and version != 4:
+                raise ValueError(f'got 40 hex digits, but version {version} fingerprint requested')
+            version = 4
+        elif len(content) == 64:
+            if version is not None and version != 6:
+                raise ValueError(f'got 64 hex digits, but version {version} fingerprint requested.')
+            version = 6
+        else:
+            raise ValueError(f'got unknown string')
         ret = str.__new__(cls, content)
-        ret._version = 4 if version is None else version
+        ret.version = version
         return ret
 
     def __eq__(self, other:object) -> bool:
@@ -759,6 +785,9 @@ class Fingerprint(str):
                 other = other.decode('latin-1')
 
             other = other.replace(' ', '')
+            if isinstance(other, Fingerprint) and self._version != other._version:
+                return False
+
             return any([str(self) == other,
                         self.keyid == other,
                         self._version == 4 and self.shortid == other])
