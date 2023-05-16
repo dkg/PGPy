@@ -782,7 +782,7 @@ class PrivKey(VersionedPacket, Primary, Private):
         '''Protect the secret key'''
 
     @abc.abstractmethod
-    def sign(self, sigdata, hash_alg):
+    def sign(self, sigdata:bytes, hash_alg:HashAlgorithm) -> bytes:
         '''make a cryptographic signature'''
 
 class PubKey(VersionedPacket, Primary, Public):
@@ -905,7 +905,7 @@ class PubKeyV4(PubKey):
 
         return pk
 
-    def verify(self, subj, sigbytes, hash_alg):
+    def verify(self, subj:bytes, sigbytes:bytes, hash_alg:HashAlgorithm) -> bool:
         return self.keymaterial.verify(subj, sigbytes, hash_alg)
 
     def parse(self, packet):
@@ -984,7 +984,7 @@ class PrivKeyV4(PrivKey, PubKeyV4):
         self.keymaterial.decrypt_keyblob(passphrase)
         del passphrase
 
-    def sign(self, sigdata, hash_alg):
+    def sign(self, sigdata:bytes, hash_alg:HashAlgorithm) -> bytes:
         return self.keymaterial.sign(sigdata, hash_alg)
 
 

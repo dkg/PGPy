@@ -381,7 +381,7 @@ class PubKey(MPIs):
     def publen(self):
         return len(self)
 
-    def verify(self, subj, sigbytes, hash_alg):
+    def verify(self, subj:bytes, sigbytes:bytes, hash_alg:HashAlgorithm) -> bool:
         return NotImplemented  # pragma: no cover
 
 
@@ -411,11 +411,11 @@ class RSAPub(PubKey):
     def __pubkey__(self):
         return rsa.RSAPublicNumbers(self.e, self.n).public_key()
 
-    def verify(self, subj, sigbytes, hash_alg):
+    def verify(self, subj:bytes, sigbytes:bytes, hash_alg:HashAlgorithm) -> bool:
         # zero-pad sigbytes if necessary
         sigbytes = (b'\x00' * (self.n.byte_length() - len(sigbytes))) + sigbytes
         try:
-            self.__pubkey__().verify(sigbytes, subj, padding.PKCS1v15(), hash_alg)
+            self.__pubkey__().verify(sigbytes, subj, padding.PKCS1v15(), getattr(hashes, hash_alg.name)())
         except InvalidSignature:
             return False
         return True
@@ -433,9 +433,9 @@ class DSAPub(PubKey):
         params = dsa.DSAParameterNumbers(self.p, self.q, self.g)
         return dsa.DSAPublicNumbers(self.y, params).public_key()
 
-    def verify(self, subj, sigbytes, hash_alg):
+    def verify(self, subj:bytes, sigbytes:bytes, hash_alg:HashAlgorithm) -> bool:
         try:
-            self.__pubkey__().verify(sigbytes, subj, hash_alg)
+            self.__pubkey__().verify(sigbytes, subj, getattr(hashes, hash_alg.name)())
         except InvalidSignature:
             return False
         return True
@@ -549,9 +549,9 @@ class ECDSAPub(PubKey):
         pkt.oid = self.oid
         return pkt
 
-    def verify(self, subj, sigbytes, hash_alg):
+    def verify(self, subj:bytes, sigbytes:bytes, hash_alg:HashAlgorithm) -> bool:
         try:
-            self.__pubkey__().verify(sigbytes, subj, ec.ECDSA(hash_alg))
+            self.__pubkey__().verify(sigbytes, subj, ec.ECDSA(getattr(hashes, hash_alg.name)()))
         except InvalidSignature:
             return False
         return True
@@ -589,10 +589,10 @@ class EdDSAPub(PubKey):
         pkt.oid = self.oid
         return pkt
 
-    def verify(self, subj, sigbytes, hash_alg):
+    def verify(self, subj:bytes, sigbytes:bytes, hash_alg:HashAlgorithm) -> bool:
         # GnuPG requires a pre-hashing with EdDSA
         # https://tools.ietf.org/html/draft-ietf-openpgp-rfc4880bis-06#section-14.8
-        digest = hashes.Hash(hash_alg)
+        digest = hashes.Hash(getattr(hashes, hash_alg.name)())
         digest.update(subj)
         subj = digest.finalize()
         try:
@@ -1414,7 +1414,7 @@ class PrivKey(PubKey):
 
         return bytearray(pt)
 
-    def sign(self, sigdata, hash_alg):
+    def sign(self, sigdata:bytes, hash_alg:HashAlgorithm) -> bytes:
         return NotImplemented  # pragma: no cover
 
     def clear(self):
@@ -1513,7 +1513,7 @@ class RSAPriv(PrivKey, RSAPub):
             del kb
 
     def sign(self, sigdata:bytes, hash_alg:HashAlgorithm) -> bytes:
-        return self.__privkey__().sign(sigdata, padding.PKCS1v15(), hash_alg)
+        return self.__privkey__().sign(sigdata, padding.PKCS1v15(), getattr(hashes, hash_alg.name)())
 
 
 class DSAPriv(PrivKey, DSAPub):
@@ -1577,8 +1577,8 @@ class DSAPriv(PrivKey, DSAPub):
             self.chksum = kb
             del kb
 
-    def sign(self, sigdata, hash_alg):
-        return self.__privkey__().sign(sigdata, hash_alg)
+    def sign(self, sigdata:bytes, hash_alg:HashAlgorithm) -> bytes:
+        return self.__privkey__().sign(sigdata, getattr(hashes, hash_alg.name)())
 
 
 class ElGPriv(PrivKey, ElGPub):
@@ -1670,8 +1670,8 @@ class ECDSAPriv(PrivKey, ECDSAPub):
         del passphrase
         self.s = MPI(kb)
 
-    def sign(self, sigdata, hash_alg):
-        return self.__privkey__().sign(sigdata, ec.ECDSA(hash_alg))
+    def sign(self, sigdata:bytes, hash_alg:HashAlgorithm) -> bytes:
+        return self.__privkey__().sign(sigdata, ec.ECDSA(getattr(hashes, hash_alg.name)()))
 
 
 class EdDSAPriv(PrivKey, EdDSAPub):
@@ -1730,7 +1730,7 @@ class EdDSAPriv(PrivKey, EdDSAPub):
         del passphrase
         self.s = MPI(kb)
 
-    def sign(self, sigdata, hash_alg):
+    def sign(self, sigdata:bytes, hash_alg:HashAlgorithm) -> bytes:
         # GnuPG requires a pre-hashing with EdDSA
         # https://tools.ietf.org/html/draft-ietf-openpgp-rfc4880bis-06#section-14.8
         digest = hashes.Hash(hash_alg)
@@ -1812,7 +1812,7 @@ class ECDHPriv(ECDSAPriv, ECDHPub):
             ##TODO: this needs to be bounded to the length of the encrypted key material
             self.encbytes = packet
 
-    def sign(self, sigdata, hash_alg):
+    def sign(self, sigdata:bytes, hash_alg:HashAlgorithm) -> bytes:
         raise PGPError("Cannot sign with an ECDH key")
 
 

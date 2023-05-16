@@ -2062,7 +2062,7 @@ class PGPKey(Armorable, ParentRef, PGPObject):
 
         if not isinstance(self._key, PrivKey):
             raise ValueError(f"Only private keys can sign ({type(self._key)})")
-        _sig = self._key.sign(sigdata, getattr(hashes, sig.hash_algorithm.name)())
+        _sig = self._key.sign(sigdata, sig.hash_algorithm)
         if _sig is NotImplemented:
             raise NotImplementedError(self.key_algorithm)
 
@@ -2628,7 +2628,7 @@ class PGPKey(Armorable, ParentRef, PGPObject):
                 if issues and issues.causes_signature_verify_to_fail:
                     sigv.add_sigsubj(sig, self, subj, issues)
                 else:
-                    verified = self._key.verify(sig.hashdata(subj), sig.__sig__, getattr(hashes, sig.hash_algorithm.name)())
+                    verified = self._key.verify(sig.hashdata(subj), sig.__sig__, sig.hash_algorithm)
                     if verified is NotImplemented:
                         raise NotImplementedError(sig.key_algorithm)
 
