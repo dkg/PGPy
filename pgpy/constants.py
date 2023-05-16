@@ -16,6 +16,7 @@ from typing import Optional, NamedTuple, Type, Union
 
 from cryptography.hazmat.primitives.asymmetric import ec, x25519, ed25519
 from cryptography.hazmat.primitives.ciphers import algorithms
+from cryptography.hazmat.primitives import hashes
 
 from .decorators import classproperty
 
@@ -125,6 +126,11 @@ class HashAlgorithm(IntEnum):
 
         return issues
 
+    def digest(self, data:bytes) -> bytes:
+        'shortcut for computing a quick one-off digest'
+        ctx = hashes.Hash(getattr(hashes, self.name)())
+        ctx.update(data)
+        return ctx.finalize()
 
 class SymmetricKeyAlgorithm(IntEnum):
     """Supported symmetric key algorithms."""

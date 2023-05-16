@@ -6,7 +6,6 @@ import abc
 import binascii
 import collections
 import copy
-import hashlib
 import itertools
 import math
 import os
@@ -1372,7 +1371,7 @@ class PrivKey(PubKey):
         self._append_private_fields(pt)
 
         # append a SHA-1 hash of the plaintext so far to the plaintext
-        pt += hashlib.new('sha1', pt).digest()
+        pt += HashAlgorithm.SHA1.digest(pt)
 
         # encrypt
         self.encbytes = bytearray(_cfb_encrypt(bytes(pt), bytes(sessionkey), enc_alg, bytes(self.s2k.iv)))
@@ -1403,7 +1402,7 @@ class PrivKey(PubKey):
         pt = _cfb_decrypt(bytes(self.encbytes), bytes(sessionkey), self.s2k.encalg, bytes(self.s2k.iv))
 
         # check the hash to see if we decrypted successfully or not
-        if self.s2k.usage == S2KUsage.CFB and not pt[-20:] == hashlib.new('sha1', pt[:-20]).digest():
+        if self.s2k.usage == S2KUsage.CFB and not pt[-20:] == HashAlgorithm.SHA1.digest(pt[:-20]):
             # if the usage byte is 254, key material is followed by a 20-octet sha-1 hash of the rest
             # of the key material block
             raise PGPDecryptionError("Passphrase was incorrect!")
@@ -1513,7 +1512,7 @@ class RSAPriv(PrivKey, RSAPub):
             self.chksum = kb
             del kb
 
-    def sign(self, sigdata, hash_alg):
+    def sign(self, sigdata:bytes, hash_alg:HashAlgorithm) -> bytes:
         return self.__privkey__().sign(sigdata, padding.PKCS1v15(), hash_alg)
 
 
