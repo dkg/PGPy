@@ -650,8 +650,59 @@ class SKESessionKeyV4(SKESessionKey):
 
 
 class OnePassSignature(VersionedPacket):
+    '''Holds common members of various OPS packet versions'''
     __typeid__ = PacketTag.OnePassSignature
     __ver__ = 0
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._sigtype:Optional[SignatureType] = None
+        self._halg:Optional[HashAlgorithm] = None
+        self._pubalg:Optional[PubKeyAlgorithm] = None
+        self.nested = False
+
+    @sdproperty
+    def sigtype(self) -> Optional[SignatureType]:
+        return self._sigtype
+
+    @sigtype.register
+    def sigtype_int(self, val:int) -> None:
+        if not isinstance(val, SignatureType):
+            val = SignatureType(val)
+        self._sigtype = val
+
+    @sdproperty
+    def pubalg(self) -> Optional[PubKeyAlgorithm]:
+        return self._pubalg
+
+    @pubalg.register
+    def pubalg_int(self, val:int) -> None:
+        if not isinstance(val, PubKeyAlgorithm):
+            val = PubKeyAlgorithm(val)
+        self._pubalg = val
+        if self._pubalg in [PubKeyAlgorithm.RSAEncryptOrSign, PubKeyAlgorithm.RSAEncrypt, PubKeyAlgorithm.RSASign]:
+            self.signature:Optional[SignatureField] = RSASignature()
+
+        elif self._pubalg == PubKeyAlgorithm.DSA:
+            self.signature = DSASignature()
+
+    @sdproperty
+    def halg(self) -> Optional[HashAlgorithm]:
+        return self._halg
+
+    @halg.register
+    def halg_int(self, val:int) -> None:
+        if not isinstance(val, HashAlgorithm):
+            val = HashAlgorithm(val)
+        self._halg = val
+
+    @abc.abstractproperty
+    def signer(self) -> Union[KeyID,Fingerprint]:
+        raise NotImplementedError()
+
+    @abc.abstractmethod
+    def signer_set(self, val:Union[bytearray,bytes,str,KeyID,Fingerprint]) -> None:
+        pass
 
 
 class OnePassSignatureV3(OnePassSignature):
@@ -695,46 +746,7 @@ class OnePassSignatureV3(OnePassSignature):
 
     def __init__(self) -> None:
         super().__init__()
-        self._sigtype:Optional[SignatureType] = None
-        self._halg:Optional[HashAlgorithm] = None
-        self._pubalg:Optional[PubKeyAlgorithm] = None
         self._signer = KeyID(b'\x00'*8)
-        self.nested = False
-
-    @sdproperty
-    def sigtype(self) -> Optional[SignatureType]:
-        return self._sigtype
-
-    @sigtype.register
-    def sigtype_int(self, val:int):
-        if not isinstance(val, SignatureType):
-            val = SignatureType(val)
-        self._sigtype = val
-
-    @sdproperty
-    def pubalg(self) -> Optional[PubKeyAlgorithm]:
-        return self._pubalg
-
-    @pubalg.register
-    def pubalg_int(self, val:int) -> None:
-        if not isinstance(val, PubKeyAlgorithm):
-            val = PubKeyAlgorithm(val)
-        self._pubalg = val
-        if self._pubalg in [PubKeyAlgorithm.RSAEncryptOrSign, PubKeyAlgorithm.RSAEncrypt, PubKeyAlgorithm.RSASign]:
-            self.signature:Optional[SignatureField] = RSASignature()
-
-        elif self._pubalg == PubKeyAlgorithm.DSA:
-            self.signature = DSASignature()
-
-    @sdproperty
-    def halg(self) -> Optional[HashAlgorithm]:
-        return self._halg
-
-    @halg.register
-    def halg_int(self, val:int) -> None:
-        if not isinstance(val, HashAlgorithm):
-            val = HashAlgorithm(val)
-        self._halg = val
 
     @sdproperty
     def signer(self) -> KeyID:
