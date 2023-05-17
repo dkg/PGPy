@@ -330,24 +330,20 @@ class PGPSignature(Armorable, ParentRef, PGPObject):
         return self._signature.sigtype
 
     @classmethod
-    def new(cls, sigtype, pkalg, halg, signer, created=None):
+    def new(cls, sigtype, pkalg:PubKeyAlgorithm, halg:HashAlgorithm, signer:Fingerprint, created=None) -> "PGPSignature":
         sig = PGPSignature()
 
+        sigpkt:Signature
         if created is None:
             created = datetime.now(timezone.utc)
         sigpkt = SignatureV4()
         sigpkt.header.tag = 2
         sigpkt.header.version = 4
         sigpkt.subpackets.addnew('CreationTime', critical=True, hashed=True, created=created)
-        keyid = None
-        if not isinstance(signer, Fingerprint) and len(signer) == 16:
-            keyid = signer
-        if isinstance(signer, Fingerprint) and len(signer) == 40:
-            keyid = signer.keyid
-        if keyid is not None and sigpkt.header.version <= 4:
-            sigpkt.subpackets.addnew('Issuer', _issuer=keyid)
-        if isinstance(signer, (Fingerprint)) or isinstance(signer, str) and len(signer) >= 40:
-            sigpkt.subpackets.addnew('IssuerFingerprint', issuer_fingerprint=signer)
+        keyid:Optional[KeyID] = None
+        if signer.version <= 4:
+            sigpkt.subpackets.addnew('Issuer', _issuer=signer.keyid)
+        sigpkt.subpackets.addnew('IssuerFingerprint', issuer_fingerprint=signer)
 
         sigpkt.sigtype = sigtype
         sigpkt.pubalg = pkalg
@@ -2130,7 +2126,7 @@ class PGPKey(Armorable, ParentRef, PGPObject):
 
             subject = subject.message
 
-        sig = PGPSignature.new(sig_type, self.key_algorithm, hash_algo, self.fingerprint.keyid, created=prefs.pop('created', None))
+        sig = PGPSignature.new(sig_type, self.key_algorithm, hash_algo, self.fingerprint, created=prefs.pop('created', None))
 
         return self._sign(subject, sig, **prefs)
 
@@ -2206,7 +2202,7 @@ class PGPKey(Armorable, ParentRef, PGPObject):
         if isinstance(subject, PGPKey):
             sig_type = SignatureType.DirectlyOnKey
 
-        sig = PGPSignature.new(sig_type, self.key_algorithm, hash_algo, self.fingerprint.keyid, created=prefs.pop('created', None))
+        sig = PGPSignature.new(sig_type, self.key_algorithm, hash_algo, self.fingerprint, created=prefs.pop('created', None))
 
         # signature options that only make sense in certifications
         usage = prefs.pop('usage', None)
@@ -2339,7 +2335,7 @@ class PGPKey(Armorable, ParentRef, PGPObject):
         else:  # pragma: no cover
             raise TypeError
 
-        sig = PGPSignature.new(sig_type, self.key_algorithm, hash_algo, self.fingerprint.keyid, created=prefs.pop('created', None))
+        sig = PGPSignature.new(sig_type, self.key_algorithm, hash_algo, self.fingerprint, created=prefs.pop('created', None))
 
         # signature options that only make sense when revoking
         reason = prefs.pop('reason', RevocationReason.NotSpecified)
@@ -2368,7 +2364,7 @@ class PGPKey(Armorable, ParentRef, PGPObject):
         """
         hash_algo = prefs.pop('hash', None)
 
-        sig = PGPSignature.new(SignatureType.DirectlyOnKey, self.key_algorithm, hash_algo, self.fingerprint.keyid, created=prefs.pop('created', None))
+        sig = PGPSignature.new(SignatureType.DirectlyOnKey, self.key_algorithm, hash_algo, self.fingerprint, created=prefs.pop('created', None))
 
         # signature options that only make sense when adding a revocation key
         sensitive = prefs.pop('sensitive', False)
@@ -2409,7 +2405,7 @@ class PGPKey(Armorable, ParentRef, PGPObject):
         else:  # pragma: no cover
             raise PGPError
 
-        sig = PGPSignature.new(sig_type, self.key_algorithm, hash_algo, self.fingerprint.keyid, created=prefs.pop('created', None))
+        sig = PGPSignature.new(sig_type, self.key_algorithm, hash_algo, self.fingerprint, created=prefs.pop('created', None))
 
         if sig_type == SignatureType.Subkey_Binding:
             # signature options that only make sense in subkey binding signatures

@@ -58,6 +58,11 @@ cryptography.hazmat.primitives.hashes.Hash object, not a hashlib.HASH
 object.  The main difference between these interfaces is the use of
 finalize() instead of digest().
 
+PGPSignature.new's "signer" argument should be a Fingerprint object
+(it used to accept an Key ID-length string).  This is generally not
+used externally anyway (most users will use e.g. PGPKey.sign to
+produce a PGPSignature object).
+
 v0.6.0
 ======
 
