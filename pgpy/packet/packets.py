@@ -24,6 +24,7 @@ from .fields import OpaquePubKey
 from .fields import OpaquePrivKey
 from .fields import OpaqueSignature
 from .fields import RSACipherText, RSAPriv, RSAPub, RSASignature
+from .fields import Signature as SignatureField
 from .fields import String2Key
 from .fields import S2KSpecifier
 from .fields import SubPackets
@@ -692,61 +693,60 @@ class OnePassSignatureV3(OnePassSignature):
     """
     __ver__ = 3
 
+    def __init__(self) -> None:
+        super().__init__()
+        self._sigtype:Optional[SignatureType] = None
+        self._halg:Optional[HashAlgorithm] = None
+        self._pubalg:Optional[PubKeyAlgorithm] = None
+        self._signer = KeyID(b'\x00'*8)
+        self.nested = False
+
     @sdproperty
-    def sigtype(self):
+    def sigtype(self) -> Optional[SignatureType]:
         return self._sigtype
 
-    @sigtype.register(int)
-    @sigtype.register(SignatureType)
-    def sigtype_int(self, val):
-        self._sigtype = SignatureType(val)
+    @sigtype.register
+    def sigtype_int(self, val:int):
+        if not isinstance(val, SignatureType):
+            val = SignatureType(val)
+        self._sigtype = val
 
     @sdproperty
-    def pubalg(self):
+    def pubalg(self) -> Optional[PubKeyAlgorithm]:
         return self._pubalg
 
-    @pubalg.register(int)
-    @pubalg.register(PubKeyAlgorithm)
-    def pubalg_int(self, val):
-        self._pubalg = PubKeyAlgorithm(val)
+    @pubalg.register
+    def pubalg_int(self, val:int) -> None:
+        if not isinstance(val, PubKeyAlgorithm):
+            val = PubKeyAlgorithm(val)
+        self._pubalg = val
         if self._pubalg in [PubKeyAlgorithm.RSAEncryptOrSign, PubKeyAlgorithm.RSAEncrypt, PubKeyAlgorithm.RSASign]:
-            self.signature = RSASignature()
+            self.signature:Optional[SignatureField] = RSASignature()
 
         elif self._pubalg == PubKeyAlgorithm.DSA:
             self.signature = DSASignature()
 
     @sdproperty
-    def halg(self):
+    def halg(self) -> Optional[HashAlgorithm]:
         return self._halg
 
-    @halg.register(int)
-    @halg.register(HashAlgorithm)
-    def halg_int(self, val):
-        try:
-            self._halg = HashAlgorithm(val)
-
-        except ValueError:  # pragma: no cover
-            self._halg = val
+    @halg.register
+    def halg_int(self, val:int) -> None:
+        if not isinstance(val, HashAlgorithm):
+            val = HashAlgorithm(val)
+        self._halg = val
 
     @sdproperty
     def signer(self) -> KeyID:
         return self._signer
 
     @signer.register
-    def signer_bin(self, val:Union[bytearray,bytes,str,KeyID,Fingerprint]):
+    def signer_set(self, val:Union[bytearray,bytes,str,KeyID,Fingerprint]) -> None:
         self._signer = KeyID(val)
 
-    def __init__(self):
-        super(OnePassSignatureV3, self).__init__()
-        self._sigtype = None
-        self._halg = None
-        self._pubalg = None
-        self._signer = KeyID(b'\x00'*8)
-        self.nested = False
-
-    def __bytearray__(self):
+    def __bytearray__(self) -> bytearray:
         _bytes = bytearray()
-        _bytes += super(OnePassSignatureV3, self).__bytearray__()
+        _bytes += super().__bytearray__()
         _bytes += bytearray([self.sigtype])
         _bytes += bytearray([self.halg])
         _bytes += bytearray([self.pubalg])
@@ -754,18 +754,18 @@ class OnePassSignatureV3(OnePassSignature):
         _bytes += bytearray([int(self.nested)])
         return _bytes
 
-    def parse(self, packet):
+    def parse(self, packet:bytearray) -> None:
         super(OnePassSignatureV3, self).parse(packet)
-        self.sigtype = packet[0]
+        self.sigtype = SignatureType(packet[0])
         del packet[0]
 
-        self.halg = packet[0]
+        self.halg = HashAlgorithm(packet[0])
         del packet[0]
 
-        self.pubalg = packet[0]
+        self.pubalg = PubKeyAlgorithm(packet[0])
         del packet[0]
 
-        self.signer = packet[:8]
+        self.signer = KeyID(packet[:8])
         del packet[:8]
 
         self.nested = (packet[0] == 1)
