@@ -1733,9 +1733,7 @@ class EdDSAPriv(PrivKey, EdDSAPub):
     def sign(self, sigdata:bytes, hash_alg:HashAlgorithm) -> bytes:
         # GnuPG requires a pre-hashing with EdDSA
         # https://tools.ietf.org/html/draft-ietf-openpgp-rfc4880bis-06#section-14.8
-        digest = hashes.Hash(hash_alg)
-        digest.update(sigdata)
-        sigdata = digest.finalize()
+        sigdata = hash_alg.digest(sigdata)
         return self.__privkey__().sign(sigdata)
 
 
