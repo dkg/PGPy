@@ -313,6 +313,140 @@ class PKESessionKeyV3(PKESessionKey):
             del packet[:(self.header.length - 18)]
 
 
+class OnePassSignature(VersionedPacket):
+    '''Holds common members of various OPS packet versions'''
+    __typeid__ = PacketTag.OnePassSignature
+    __ver__ = 0
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._sigtype:Optional[SignatureType] = None
+        self._halg:Optional[HashAlgorithm] = None
+        self._pubalg:Optional[PubKeyAlgorithm] = None
+        self.nested = False
+
+    @sdproperty
+    def sigtype(self) -> Optional[SignatureType]:
+        return self._sigtype
+
+    @sigtype.register
+    def sigtype_int(self, val:int) -> None:
+        if not isinstance(val, SignatureType):
+            val = SignatureType(val)
+        self._sigtype = val
+
+    @sdproperty
+    def pubalg(self) -> Optional[PubKeyAlgorithm]:
+        return self._pubalg
+
+    @pubalg.register
+    def pubalg_int(self, val:int) -> None:
+        if not isinstance(val, PubKeyAlgorithm):
+            val = PubKeyAlgorithm(val)
+        self._pubalg = val
+        if self._pubalg in [PubKeyAlgorithm.RSAEncryptOrSign, PubKeyAlgorithm.RSAEncrypt, PubKeyAlgorithm.RSASign]:
+            self.signature:Optional[SignatureField] = RSASignature()
+
+        elif self._pubalg == PubKeyAlgorithm.DSA:
+            self.signature = DSASignature()
+
+    @sdproperty
+    def halg(self) -> Optional[HashAlgorithm]:
+        return self._halg
+
+    @halg.register
+    def halg_int(self, val:int) -> None:
+        if not isinstance(val, HashAlgorithm):
+            val = HashAlgorithm(val)
+        self._halg = val
+
+    @abc.abstractproperty
+    def signer(self) -> Union[KeyID,Fingerprint]:
+        raise NotImplementedError()
+
+    @abc.abstractmethod
+    def signer_set(self, val:Union[bytearray,bytes,str,KeyID,Fingerprint]) -> None:
+        pass
+
+class OnePassSignatureV3(OnePassSignature):
+    """
+    5.4.  One-Pass Signature Packets (Tag 4)
+
+    The One-Pass Signature packet precedes the signed data and contains
+    enough information to allow the receiver to begin calculating any
+    hashes needed to verify the signature.  It allows the Signature
+    packet to be placed at the end of the message, so that the signer
+    can compute the entire signed message in one pass.
+
+    A One-Pass Signature does not interoperate with PGP 2.6.x or
+    earlier.
+
+    The body of this packet consists of:
+
+     - A one-octet version number.  The current version is 3.
+
+     - A one-octet signature type.  Signature types are described in
+       Section 5.2.1.
+
+     - A one-octet number describing the hash algorithm used.
+
+     - A one-octet number describing the public-key algorithm used.
+
+     - An eight-octet number holding the Key ID of the signing key.
+
+     - A one-octet number holding a flag showing whether the signature
+       is nested.  A zero value indicates that the next packet is
+       another One-Pass Signature packet that describes another
+       signature to be applied to the same message data.
+
+    Note that if a message contains more than one one-pass signature,
+    then the Signature packets bracket the message; that is, the first
+    Signature packet after the message corresponds to the last one-pass
+    packet and the final Signature packet corresponds to the first
+    one-pass packet.
+    """
+    __ver__ = 3
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._signer = KeyID(b'\x00'*8)
+
+    @sdproperty
+    def signer(self) -> KeyID:
+        return self._signer
+
+    @signer.register
+    def signer_set(self, val:Union[bytearray,bytes,str,KeyID,Fingerprint]) -> None:
+        self._signer = KeyID(val)
+
+    def __bytearray__(self) -> bytearray:
+        _bytes = bytearray()
+        _bytes += super().__bytearray__()
+        _bytes += bytearray([self.sigtype])
+        _bytes += bytearray([self.halg])
+        _bytes += bytearray([self.pubalg])
+        _bytes += bytes(self.signer)
+        _bytes += bytearray([int(self.nested)])
+        return _bytes
+
+    def parse(self, packet:bytearray) -> None:
+        super().parse(packet)
+        self.sigtype = SignatureType(packet[0])
+        del packet[0]
+
+        self.halg = HashAlgorithm(packet[0])
+        del packet[0]
+
+        self.pubalg = PubKeyAlgorithm(packet[0])
+        del packet[0]
+
+        self.signer = KeyID(packet[:8])
+        del packet[:8]
+
+        self.nested = (packet[0] == 1)
+        del packet[0]
+
+
 class Signature(VersionedPacket):
     __typeid__ = PacketTag.Signature
     __ver__ = 0
@@ -648,140 +782,6 @@ class SKESessionKeyV4(SKESessionKey):
         # update header length and return sk
         self.update_hlen()
 
-
-class OnePassSignature(VersionedPacket):
-    '''Holds common members of various OPS packet versions'''
-    __typeid__ = PacketTag.OnePassSignature
-    __ver__ = 0
-
-    def __init__(self) -> None:
-        super().__init__()
-        self._sigtype:Optional[SignatureType] = None
-        self._halg:Optional[HashAlgorithm] = None
-        self._pubalg:Optional[PubKeyAlgorithm] = None
-        self.nested = False
-
-    @sdproperty
-    def sigtype(self) -> Optional[SignatureType]:
-        return self._sigtype
-
-    @sigtype.register
-    def sigtype_int(self, val:int) -> None:
-        if not isinstance(val, SignatureType):
-            val = SignatureType(val)
-        self._sigtype = val
-
-    @sdproperty
-    def pubalg(self) -> Optional[PubKeyAlgorithm]:
-        return self._pubalg
-
-    @pubalg.register
-    def pubalg_int(self, val:int) -> None:
-        if not isinstance(val, PubKeyAlgorithm):
-            val = PubKeyAlgorithm(val)
-        self._pubalg = val
-        if self._pubalg in [PubKeyAlgorithm.RSAEncryptOrSign, PubKeyAlgorithm.RSAEncrypt, PubKeyAlgorithm.RSASign]:
-            self.signature:Optional[SignatureField] = RSASignature()
-
-        elif self._pubalg == PubKeyAlgorithm.DSA:
-            self.signature = DSASignature()
-
-    @sdproperty
-    def halg(self) -> Optional[HashAlgorithm]:
-        return self._halg
-
-    @halg.register
-    def halg_int(self, val:int) -> None:
-        if not isinstance(val, HashAlgorithm):
-            val = HashAlgorithm(val)
-        self._halg = val
-
-    @abc.abstractproperty
-    def signer(self) -> Union[KeyID,Fingerprint]:
-        raise NotImplementedError()
-
-    @abc.abstractmethod
-    def signer_set(self, val:Union[bytearray,bytes,str,KeyID,Fingerprint]) -> None:
-        pass
-
-
-class OnePassSignatureV3(OnePassSignature):
-    """
-    5.4.  One-Pass Signature Packets (Tag 4)
-
-    The One-Pass Signature packet precedes the signed data and contains
-    enough information to allow the receiver to begin calculating any
-    hashes needed to verify the signature.  It allows the Signature
-    packet to be placed at the end of the message, so that the signer
-    can compute the entire signed message in one pass.
-
-    A One-Pass Signature does not interoperate with PGP 2.6.x or
-    earlier.
-
-    The body of this packet consists of:
-
-     - A one-octet version number.  The current version is 3.
-
-     - A one-octet signature type.  Signature types are described in
-       Section 5.2.1.
-
-     - A one-octet number describing the hash algorithm used.
-
-     - A one-octet number describing the public-key algorithm used.
-
-     - An eight-octet number holding the Key ID of the signing key.
-
-     - A one-octet number holding a flag showing whether the signature
-       is nested.  A zero value indicates that the next packet is
-       another One-Pass Signature packet that describes another
-       signature to be applied to the same message data.
-
-    Note that if a message contains more than one one-pass signature,
-    then the Signature packets bracket the message; that is, the first
-    Signature packet after the message corresponds to the last one-pass
-    packet and the final Signature packet corresponds to the first
-    one-pass packet.
-    """
-    __ver__ = 3
-
-    def __init__(self) -> None:
-        super().__init__()
-        self._signer = KeyID(b'\x00'*8)
-
-    @sdproperty
-    def signer(self) -> KeyID:
-        return self._signer
-
-    @signer.register
-    def signer_set(self, val:Union[bytearray,bytes,str,KeyID,Fingerprint]) -> None:
-        self._signer = KeyID(val)
-
-    def __bytearray__(self) -> bytearray:
-        _bytes = bytearray()
-        _bytes += super().__bytearray__()
-        _bytes += bytearray([self.sigtype])
-        _bytes += bytearray([self.halg])
-        _bytes += bytearray([self.pubalg])
-        _bytes += bytes(self.signer)
-        _bytes += bytearray([int(self.nested)])
-        return _bytes
-
-    def parse(self, packet:bytearray) -> None:
-        super(OnePassSignatureV3, self).parse(packet)
-        self.sigtype = SignatureType(packet[0])
-        del packet[0]
-
-        self.halg = HashAlgorithm(packet[0])
-        del packet[0]
-
-        self.pubalg = PubKeyAlgorithm(packet[0])
-        del packet[0]
-
-        self.signer = KeyID(packet[:8])
-        del packet[:8]
-
-        self.nested = (packet[0] == 1)
-        del packet[0]
 
 
 class PrivKey(VersionedPacket, Primary, Private):
