@@ -53,6 +53,11 @@ to do so.
 EllipticCurveOID.Invalid was removed -- EllipticCurveOID only
 enumerates supported curves now.
 
+HashAlgorithm.hasher now returns a
+cryptography.hazmat.primitives.hashes.Hash object, not a hashlib.HASH
+object.  The main difference between these interfaces is the use of
+finalize() instead of digest().
+
 v0.6.0
 ======
 

@@ -1,7 +1,6 @@
 """ constants.py
 """
 import bz2
-import hashlib
 import os
 import zlib
 import warnings
@@ -94,12 +93,12 @@ class HashAlgorithm(IntEnum):
     #SHA3_512 = 15
 
     @property
-    def hasher(self):
-        return hashlib.new(self.name)
+    def hasher(self) -> hashes.Hash:
+        return hashes.Hash(getattr(hashes, self.name)())
 
     @property
     def digest_size(self) -> int:
-        return self.hasher.digest_size
+        return getattr(hashes, self.name).digest_size
 
     @property
     def is_supported(self) -> bool:

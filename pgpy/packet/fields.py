@@ -927,7 +927,7 @@ class S2KSpecifier(Field):
             h.append(_h)
 
         # and return the key!
-        return b''.join(hc.digest() for hc in h)[:(keylen_bits // 8)]
+        return b''.join(hc.finalize() for hc in h)[:(keylen_bits // 8)]
 
 
 class String2Key(Field):
