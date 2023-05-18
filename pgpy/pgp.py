@@ -2414,7 +2414,9 @@ class PGPKey(Armorable, ParentRef, PGPObject):
         else:  # pragma: no cover
             raise PGPError
 
-        sig = PGPSignature.new(sig_type, self.key_algorithm, hash_algo, self.fingerprint, created=prefs.pop('created', None))
+        created:Optional[datetime] = prefs.pop('created', None)
+
+        sig = PGPSignature.new(sig_type, self.key_algorithm, hash_algo, self.fingerprint, created=created)
 
         if sig_type == SignatureType.Subkey_Binding:
             # signature options that only make sense in subkey binding signatures
@@ -2429,10 +2431,10 @@ class PGPKey(Armorable, ParentRef, PGPObject):
                 subkey_fpr = key.fingerprint
 
                 if not key.is_public:
-                    crosssig = key.bind(self)
+                    crosssig = key.bind(self, created=created)
 
                 elif subkey_fpr in self._children:  # pragma: no cover
-                    crosssig = self._children[subkey_fpr].bind(self)
+                    crosssig = self._children[subkey_fpr].bind(self, created=created)
 
             if crosssig is None:
                 if usage is None:
