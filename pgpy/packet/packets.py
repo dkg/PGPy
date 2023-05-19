@@ -801,22 +801,6 @@ class SKESessionKeyV4(SKESessionKey):
 
 
 
-class PrivKey(VersionedPacket, Primary, Private):
-    __typeid__ = PacketTag.SecretKey
-    __ver__ = 0
-
-    @abc.abstractmethod
-    def protect(self, passphrase:str,
-                enc_alg:Optional[SymmetricKeyAlgorithm]=None,
-                hash_alg:Optional[HashAlgorithm]=None,
-                s2kspec:Optional[S2KSpecifier]=None,
-                iv:Optional[bytes]=None) -> None:
-        '''Protect the secret key'''
-
-    @abc.abstractmethod
-    def sign(self, sigdata:bytes, hash_alg:HashAlgorithm) -> bytes:
-        '''make a cryptographic signature'''
-
 class PubKey(VersionedPacket, Primary, Public):
     __typeid__ = PacketTag.PublicKey
     __ver__ = 0
@@ -955,6 +939,39 @@ class PubKeyV4(PubKey):
         del packet[:pend]
 
 
+class PrivKey(VersionedPacket, Primary, Private):
+    __typeid__ = PacketTag.SecretKey
+    __ver__ = 0
+
+    @property
+    def protected(self):
+        return bool(self.keymaterial.s2k)
+
+    @property
+    def unlocked(self):
+        if self.protected:
+            return 0 not in list(self.keymaterial)
+        return True  # pragma: no cover
+
+    def protect(self, passphrase:str,
+                enc_alg:Optional[SymmetricKeyAlgorithm]=None,
+                hash_alg:Optional[HashAlgorithm]=None,
+                s2kspec:Optional[S2KSpecifier]=None,
+                iv:Optional[bytes]=None) -> None:
+        if enc_alg is None:
+            enc_alg = SymmetricKeyAlgorithm.AES256
+        self.keymaterial.encrypt_keyblob(passphrase, enc_alg=enc_alg, hash_alg=hash_alg, s2kspec=s2kspec, iv=iv)
+        del passphrase
+        self.update_hlen()
+
+    def unprotect(self, passphrase) -> None:
+        self.keymaterial.decrypt_keyblob(passphrase)
+        del passphrase
+
+    def sign(self, sigdata:bytes, hash_alg:HashAlgorithm) -> bytes:
+        return self.keymaterial.sign(sigdata, hash_alg)
+
+
 class PrivKeyV4(PrivKey, PubKeyV4):
     __ver__ = 4
 
@@ -990,34 +1007,6 @@ class PrivKeyV4(PrivKey, PubKeyV4):
 
         pk.update_hlen()
         return pk
-
-    @property
-    def protected(self):
-        return bool(self.keymaterial.s2k)
-
-    @property
-    def unlocked(self):
-        if self.protected:
-            return 0 not in list(self.keymaterial)
-        return True  # pragma: no cover
-
-    def protect(self, passphrase:str,
-                enc_alg:Optional[SymmetricKeyAlgorithm]=None,
-                hash_alg:Optional[HashAlgorithm]=None,
-                s2kspec:Optional[S2KSpecifier]=None,
-                iv:Optional[bytes]=None) -> None:
-        if enc_alg is None:
-            enc_alg = SymmetricKeyAlgorithm.AES256
-        self.keymaterial.encrypt_keyblob(passphrase, enc_alg=enc_alg, hash_alg=hash_alg, s2kspec=s2kspec, iv=iv)
-        del passphrase
-        self.update_hlen()
-
-    def unprotect(self, passphrase) -> None:
-        self.keymaterial.decrypt_keyblob(passphrase)
-        del passphrase
-
-    def sign(self, sigdata:bytes, hash_alg:HashAlgorithm) -> bytes:
-        return self.keymaterial.sign(sigdata, hash_alg)
 
 
 class PrivSubKey(VersionedPacket, Sub, Private):
