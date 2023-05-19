@@ -805,9 +805,11 @@ class PubKey(VersionedPacket, Primary, Public):
     __typeid__ = PacketTag.PublicKey
     __ver__ = 0
 
-
-class PubKeyV4(PubKey):
-    __ver__ = 4
+    def __init__(self):
+        super().__init__()
+        self.created = datetime.now(timezone.utc)
+        self.pkalg = 0
+        self.keymaterial = None
 
     @sdproperty
     def created(self):
@@ -872,6 +874,22 @@ class PubKeyV4(PubKey):
     def public(self):
         return isinstance(self, PubKey) and not isinstance(self, PrivKey)
 
+    def __copy__(self):
+        pk = self.__class__()
+        pk.header = copy.copy(self.header)
+        pk.created = self.created
+        pk.pkalg = self.pkalg
+        pk.keymaterial = copy.copy(self.keymaterial)
+
+        return pk
+
+    def verify(self, subj:bytes, sigbytes:bytes, hash_alg:HashAlgorithm) -> bool:
+        return self.keymaterial.verify(subj, sigbytes, hash_alg)
+
+
+class PubKeyV4(PubKey):
+    __ver__ = 4
+
     @property
     def fingerprint(self):
         # A V4 fingerprint is the 160-bit SHA-1 hash of the octet 0x99, followed by the two-octet packet length,
@@ -898,12 +916,6 @@ class PubKeyV4(PubKey):
         # and return the digest
         return Fingerprint(fp.finalize())
 
-    def __init__(self):
-        super(PubKeyV4, self).__init__()
-        self.created = datetime.now(timezone.utc)
-        self.pkalg = 0
-        self.keymaterial = None
-
     def __bytearray__(self):
         _bytes = bytearray()
         _bytes += super(PubKeyV4, self).__bytearray__()
@@ -911,18 +923,6 @@ class PubKeyV4(PubKey):
         _bytes += self.int_to_bytes(self.pkalg)
         _bytes += self.keymaterial.__bytearray__()
         return _bytes
-
-    def __copy__(self):
-        pk = self.__class__()
-        pk.header = copy.copy(self.header)
-        pk.created = self.created
-        pk.pkalg = self.pkalg
-        pk.keymaterial = copy.copy(self.keymaterial)
-
-        return pk
-
-    def verify(self, subj:bytes, sigbytes:bytes, hash_alg:HashAlgorithm) -> bool:
-        return self.keymaterial.verify(subj, sigbytes, hash_alg)
 
     def parse(self, packet):
         super(PubKeyV4, self).parse(packet)
