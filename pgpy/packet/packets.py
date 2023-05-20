@@ -426,7 +426,7 @@ class OnePassSignatureV3(OnePassSignature):
         _bytes += bytearray([self.halg])
         _bytes += bytearray([self.pubalg])
         _bytes += bytes(self.signer)
-        _bytes += bytearray([int(self.nested)])
+        _bytes += bytearray([int(not self.nested)])
         return _bytes
 
     def parse(self, packet:bytearray) -> None:
@@ -443,7 +443,7 @@ class OnePassSignatureV3(OnePassSignature):
         self.signer = KeyID(packet[:8])
         del packet[:8]
 
-        self.nested = (packet[0] == 1)
+        self.nested = (packet[0] == 0)
         del packet[0]
 
 
