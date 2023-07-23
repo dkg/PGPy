@@ -2385,13 +2385,11 @@ class PGPKey(Armorable, ParentRef, PGPObject):
             raise
 
     @property
-    def self_verified(self):
-        warnings.warn("TODO: Self-sigs verification is not yet working because self-sigs are not parsed!!!")
-        return SecurityIssues.OK
-
+    def self_verified(self) -> SecurityIssues:
         if self._self_verified is None:
             self._do_self_signatures_verification()
-
+        if self._self_verified is None:
+            raise ValueError("PGPKey._do_self_signatures_verification() should have set self._self_verified")
         return self._self_verified
 
     def check_primitives(self):
