@@ -34,6 +34,7 @@ from .fields import NativeCFRGXPub
 from .fields import NativeCFRGXCipherText
 from .fields import X25519Pub, X25519Priv, X25519CipherText
 from .fields import X448Pub, X448Priv, X448CipherText
+from .fields import MLKEM768_X25519Pub, MLKEM768_X25519Priv, MLKEM768_X25519CipherText
 from .fields import Signature as SignatureField
 from .fields import PubKey as PubKeyField
 from .fields import PrivKey as PrivKeyField
@@ -162,6 +163,8 @@ class PKESessionKey(VersionedPacket):
             self.ct = X25519CipherText()
         elif self._pkalg is PubKeyAlgorithm.X448:
             self.ct = X448CipherText()
+        elif self._pkalg is PubKeyAlgorithm.MLKEM768_X25519:
+            self.ct = MLKEM768_X25519CipherText()
 
 
 class PKESessionKeyV3(PKESessionKey):
@@ -1336,6 +1339,8 @@ class PubKey(VersionedPacket, Primary, Public):
             self.keymaterial = X25519Pub() if self.public else X25519Priv(self.__ver__)
         elif self.pkalg is PubKeyAlgorithm.X448:
             self.keymaterial = X448Pub() if self.public else X448Priv(self.__ver__)
+        elif self.pkalg is PubKeyAlgorithm.MLKEM768_X25519:
+            self.keymaterial = MLKEM768_X25519Pub() if self.public else MLKEM768_X25519Priv(self.__ver__)
         else:
             self.keymaterial = OpaquePubKey() if self.public else OpaquePrivKey(self.__ver__)
 

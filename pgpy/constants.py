@@ -243,6 +243,7 @@ class PubKeyAlgorithm(IntEnum):
     X448 = 26
     Ed25519 = 27
     Ed448 = 28
+    MLKEM768_X25519 = 105
 
     @classmethod
     def _missing_(cls, val: object) -> PubKeyAlgorithm:
@@ -261,6 +262,7 @@ class PubKeyAlgorithm(IntEnum):
                         PubKeyAlgorithm.X448,
                         PubKeyAlgorithm.Ed25519,
                         PubKeyAlgorithm.Ed448,
+                        PubKeyAlgorithm.MLKEM768_X25519,
                         }
 
     @property
@@ -270,6 +272,7 @@ class PubKeyAlgorithm(IntEnum):
                         PubKeyAlgorithm.ECDH,
                         PubKeyAlgorithm.X25519,
                         PubKeyAlgorithm.X448,
+                        PubKeyAlgorithm.MLKEM768_X25519,
                         }
 
     @property
@@ -886,4 +889,5 @@ MINIMUM_ASYMMETRIC_KEY_LENGTHS = {
     PubKeyAlgorithm.Ed25519: True,
     PubKeyAlgorithm.X448: True,
     PubKeyAlgorithm.X25519: True,
+    PubKeyAlgorithm.MLKEM768_X25519: True,
 }

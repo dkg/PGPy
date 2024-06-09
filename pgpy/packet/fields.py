@@ -35,7 +35,7 @@ from cryptography.hazmat.primitives.asymmetric import x25519
 from cryptography.hazmat.primitives.asymmetric import x448
 from cryptography.hazmat.primitives.asymmetric import utils
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-from cryptography.hazmat.primitives.hashes import SHA256, SHA512, HashAlgorithm as cryptography_HashAlgorithm
+from cryptography.hazmat.primitives.hashes import SHA256, SHA512, SHA3_256, HashAlgorithm as cryptography_HashAlgorithm, Hash
 
 from cryptography.hazmat.primitives.kdf.concatkdf import ConcatKDFHash
 
@@ -43,6 +43,8 @@ from cryptography.hazmat.primitives.keywrap import aes_key_wrap
 from cryptography.hazmat.primitives.keywrap import aes_key_unwrap
 
 from cryptography.hazmat.primitives.padding import PKCS7
+
+import fips203
 
 from .subpackets import Signature as SignatureSP
 from .subpackets import UserAttribute
@@ -128,6 +130,9 @@ __all__ = ['SubPackets',
            'ECDHCipherText',
            'X25519CipherText',
            'X448CipherText',
+           'MLKEM768_X25519Pub',
+           'MLKEM768_X25519Priv',
+           'MLKEM768_X25519CipherText',
            ]
 
 
@@ -2665,3 +2670,156 @@ class X448CipherText(NativeCFRGXCipherText):
 
     def kdf_hash_algo(self) -> cryptography_HashAlgorithm:
         return SHA512()
+
+
+class MLKEM768_X25519Pub(PubKey):
+    __pubkey_algo__ = PubKeyAlgorithm.MLKEM768_X25519
+    _public_ec_length: int = 32
+    _public_pqkem_length: int = fips203.ML_KEM_768.EK_SIZE
+
+    def __bytearray__(self) -> bytearray:
+        ret = bytearray()
+        ret += self._pub_ec.public_bytes_raw()
+        ret += bytes(self._pub_pqkem)
+        return ret
+
+    def parse(self, packet: bytearray) -> None:
+        self._pub_ec = x25519.X25519PublicKey.from_public_bytes(bytes(packet[:self._public_ec_length]))
+        del packet[:self._public_ec_length]
+        self._pub_pqkem = fips203.EncapsulationKey(bytes(packet[:self._public_pqkem_length]))
+        del packet[:self._public_pqkem_length]
+
+    def __pubkey__(self) -> Tuple[fips203.EncapsulationKey, x25519.X25519PublicKey]:
+        return (self._pub_pqkem, self._pub_ec)
+
+    def __len__(self) -> int:
+        return self._public_ec_length + self._public_pqkem_length
+
+    def encrypt(self, symalg: Optional[SymmetricKeyAlgorithm], data: bytes, fpr: Fingerprint) -> MLKEM768_X25519CipherText:
+        # FIXME
+
+        ct._text = aes_key_wrap(key_wrap_key, data)
+        return ct
+
+
+class MLKEM768_X25519Priv(PrivKey, MLKEM768_X25519Pub):
+    _priv_ec_length: int = 32
+    _priv_pqkem_length: int = fips203.ML_KEM_768.DK_SIZE
+
+    def clear(self) -> None:
+        """delete and re-initialize all private components to zero"""
+        self._priv_ec = None
+        self._priv_pqkem = None
+
+    def _generate(self, keysize: Optional[Union[int, EllipticCurveOID]] = None) -> None:
+        if keysize is not None:
+            raise ValueError("MLKEM768_X25519 encryption ('X*') keys should always receive a None parameter for keysize, as they are fixed length")
+
+        self._priv_ec = x25519.X25519PrivateKey.generate()
+        self._pub_ec = self._priv_ec.public_key()
+        (self._pub_pqkem, self._priv_pqkem) = fips203.ML_KEM_768.keygen()
+
+        self._compute_chksum()
+
+    def parse(self, packet: bytearray) -> None:
+        MLKEM768_X25519Pub.parse(self, packet)
+        # parse s2k business
+        self.s2k.parse(packet)
+
+        if not self.s2k:
+            self._priv_ec = x25519.X25519PrivateKey.from_private_bytes(bytes(packet[:self._priv_ec_length]))
+            del packet[:self._priv_ec_length]
+            self._priv_pqkem = fips203.DecapsulationKey(bytes(packet[:self._priv_pqkem_length]))
+            del packet[:self._priv_ec_length]
+        else:
+            ##TODO: this needs to be bounded to the length of the encrypted key material
+            self.encbytes = packet
+
+    def _append_private_fields(self, _bytes: bytearray) -> None:
+        _bytes += self._priv_ec.private_bytes_raw()
+        _bytes += bytes(self._priv_pqkem)
+
+    def __privkey__(self) -> Tuple[fips203.DecapsulationKey, x25519.X25519PrivateKey]:
+        return (self._priv_pqkem, self._priv_ec)
+
+    def sign(self, sigdata: bytes, hash_alg: HashAlgorithm) -> bytes:
+        raise PGPError("Cannot sign with an ML-KEM-768+X25519 key")
+
+    def decrypt_keyblob(self, passphrase: Union[str, bytes],
+                        packet_type: PacketType = PacketType.SecretKey,
+                        creation_time: Optional[datetime] = None) -> None:
+        kb = self._decrypt_keyblob_helper(passphrase, packet_type, creation_time)
+        del passphrase
+        if kb is None:
+            return
+
+        self._priv_ec = x25519.X25519PrivateKey.from_private_bytes(kb[:self._priv_ec_length])
+        del kb[:self._priv_ec_length]
+        self._priv_pqkem = fips203.DecapsulationKey(kb[:self._priv_pqkem_length])
+        del kb[:self._priv_pqkem_length]
+
+        if self.s2k.usage in [254, 255]:
+            self.chksum = kb
+            del kb
+
+    def decrypt(self, ct: CipherText, fpr: Fingerprint, get_symalg: bool) -> Tuple[Optional[SymmetricKeyAlgorithm], bytes]:
+        if not isinstance(ct, MLKEM768_X25519CipherText):
+            raise TypeError(type(ct))
+        eph_ec = x25519.X25519PublicKey.from_public_bytes(ct._traditional_pubkey_bytes)
+        h = Hash(SHA3_256())
+        h.update(self._priv_ec.exchange(eph_ec) + ct._traditional_pubkey_bytes + self._pub_ec.public_bytes_raw())
+        ecdh_key_share = h.finalize()
+        mlkem_key_share = self._priv_pqkem.decaps(fips203.Ciphertext(ct._pqkem_ciphertext_bytes))
+        fixed_info = bytes([self.__pubkey_algo__]) + b'OpenPGPCompositeKDFv1'
+        counter = bytes([0,0,0,1])
+
+        ecdh_data = ecdh_key_share + ct._traditional_pubkey_bytes + self._pub_ec.public_bytes_raw()
+        mlkem_data = mlkem_key_share + ct._pqkem_ciphertext_bytes + bytes(self._pub_pqkem)
+        h = Hash(SHA3_256())
+        h.update(counter + ecdh_data + mlkem_data + fixed_info)
+        kek = h.finalize()
+        data = aes_key_unwrap(kek, ct._wrapped_session_key)
+        return (ct._sym_algo, data)
+
+
+class MLKEM768_X25519CipherText(CipherText):
+    _traditional_pubkey_size: int = 32
+    _pqkem_ciphertext_size: int = fips203.ML_KEM_768.CT_SIZE
+
+    def __init__(self) -> None:
+        self._traditional_pubkey_bytes: Optional[bytes] = None
+        self._pqkem_ciphertext_bytes: Optional[bytes] = None
+        self._sym_algo: Optional[SymmetricKeyAlgorithm] = None
+        self._wrapped_session_key: Optional[bytes] = None
+
+    def __bytearray__(self) -> bytearray:
+        b = bytearray()
+        if (self._traditional_pubkey_bytes is None or
+            self._pqkem_ciphertext_bytes is None or
+            self._wrapped_session_key is None):
+            raise ValueError("Cannot convert KemCombinerCiphertext to bytearray when some members have not been populated")
+        b += self._traditional_pubkey_bytes
+        b += self._pqkem_ciphertext_bytes
+        if self._sym_algo is not None:
+            b += bytes([self._sym_algo])
+        b += len(self._wrapped_session_key)
+        b += self._wrapped_session_key
+        return bytearray
+
+    def parse(self, packet: bytearray) -> None:
+        self._traditional_pubkey_bytes = bytes(packet[:self._traditional_pubkey_size])
+        del packet[:self._traditional_pubkey_size]
+        self._pqkem_ciphertext_bytes = bytes(packet[:self._pqkem_ciphertext_size])
+        del packet[:self._pqkem_ciphertext_size]
+        # This assumes that https://github.com/openpgp-pqc/draft-openpgp-pqc/pull/93 is adopted
+        sz = packet[0]
+        del packet[0]
+        # for PKESKv3 ciphertexts, the symmetric key algorithm is
+        # stuck in the clear outside of the ciphertext.
+        # FIXME: this should verify that we are in fact in a PKESKv3 ciphertext
+        if sz % 8 == 1:
+            self._sym_algo = SymmetricKeyAlgorithm(packet[0])
+            del packet[0]
+            sz -= 1
+        self._wrapped_session_key = bytes(packet[:sz])
+        del packet[:sz]
