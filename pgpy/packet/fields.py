@@ -2695,10 +2695,32 @@ class MLKEM768_X25519Pub(PubKey):
     def __len__(self) -> int:
         return self._public_ec_length + self._public_pqkem_length
 
-    def encrypt(self, symalg: Optional[SymmetricKeyAlgorithm], data: bytes, fpr: Fingerprint) -> MLKEM768_X25519CipherText:
-        # FIXME
+    def _derive_key(self, ct: MLKEM768_X25519CipherText,
+                    ec_ss: bytes, mlkem_ss: bytes) -> bytes:
+        h = Hash(SHA3_256())
+        h.update(ec_ss + ct._traditional_pubkey_bytes + self._pub_ec.public_bytes_raw())
+        ecdh_key_share = h.finalize()
+        fixed_info = bytes([self.__pubkey_algo__]) + b'OpenPGPCompositeKDFv1'
+        counter = bytes([0,0,0,1])
 
-        ct._text = aes_key_wrap(key_wrap_key, data)
+        ecdh_data = ecdh_key_share + ct._traditional_pubkey_bytes + self._pub_ec.public_bytes_raw()
+        mlkem_data = mlkem_ss + ct._pqkem_ciphertext_bytes + bytes(self._pub_pqkem)
+        h = Hash(SHA3_256())
+        h.update(counter + ecdh_data + mlkem_data + fixed_info)
+        return h.finalize()
+
+
+    def encrypt(self, symalg: Optional[SymmetricKeyAlgorithm], data: bytes, fpr: Fingerprint) -> MLKEM768_X25519CipherText:
+        ct = MLKEM768_X25519CipherText()
+        eph_ec = x25519.X25519PrivateKey.generate()
+        ec_ss = eph_ec.exchange(self._pub_ec)
+        mlkem_ct, mlkem_ss = self._pub_pqkem.encaps()
+
+        ct._traditional_pubkey_bytes = eph_ec.public_key().public_bytes_raw()
+        ct._pqkem_ciphertext_bytes = bytes(mlkem_ct)
+        kek = self._derive_key(ct, ec_ss, mlkem_ss)
+
+        ct._wrapped_session_key = aes_key_wrap(kek, data)
         return ct
 
 
@@ -2766,18 +2788,9 @@ class MLKEM768_X25519Priv(PrivKey, MLKEM768_X25519Pub):
         if not isinstance(ct, MLKEM768_X25519CipherText):
             raise TypeError(type(ct))
         eph_ec = x25519.X25519PublicKey.from_public_bytes(ct._traditional_pubkey_bytes)
-        h = Hash(SHA3_256())
-        h.update(self._priv_ec.exchange(eph_ec) + ct._traditional_pubkey_bytes + self._pub_ec.public_bytes_raw())
-        ecdh_key_share = h.finalize()
         mlkem_key_share = self._priv_pqkem.decaps(fips203.Ciphertext(ct._pqkem_ciphertext_bytes))
-        fixed_info = bytes([self.__pubkey_algo__]) + b'OpenPGPCompositeKDFv1'
-        counter = bytes([0,0,0,1])
-
-        ecdh_data = ecdh_key_share + ct._traditional_pubkey_bytes + self._pub_ec.public_bytes_raw()
-        mlkem_data = mlkem_key_share + ct._pqkem_ciphertext_bytes + bytes(self._pub_pqkem)
-        h = Hash(SHA3_256())
-        h.update(counter + ecdh_data + mlkem_data + fixed_info)
-        kek = h.finalize()
+        ec_ss = self._priv_ec.exchange(eph_ec)
+        kek = self._derive_key(ct, ec_ss, mlkem_key_share)
         data = aes_key_unwrap(kek, ct._wrapped_session_key)
         return (ct._sym_algo, data)
 
@@ -2802,9 +2815,9 @@ class MLKEM768_X25519CipherText(CipherText):
         b += self._pqkem_ciphertext_bytes
         if self._sym_algo is not None:
             b += bytes([self._sym_algo])
-        b += len(self._wrapped_session_key)
+        b += bytearray([len(self._wrapped_session_key)])
         b += self._wrapped_session_key
-        return bytearray
+        return b
 
     def parse(self, packet: bytearray) -> None:
         self._traditional_pubkey_bytes = bytes(packet[:self._traditional_pubkey_size])
