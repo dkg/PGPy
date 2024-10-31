@@ -65,7 +65,7 @@ Requirements
 
 To use `sopgpy` you'll also need:
 
-- `sop <https://pypi.org/project/sop/>`_ >= 0.5.1
+- `sop <https://pypi.org/project/sop/>`_ >= 0.6.0
 
 To use EAX as an AEAD mode, you'll also need:
 

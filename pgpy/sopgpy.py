@@ -67,7 +67,8 @@ class SOPGPy(sop.StatelessOpenPGP):
         super().__init__(name='sopgpy', version=f'{self.pgpy_version}',
                          backend=f'PGPy {self.pgpy_version}',
                          extended=f'python-cryptography {self.cryptography_version}\n{openssl.backend.openssl_version_text()}{self.cryptodome_version}',
-                         description=f'Stateless OpenPGP using PGPy {self.pgpy_version}')
+                         description=f'Stateless OpenPGP using PGPy {self.pgpy_version}',
+                         sopv="1.0")
 
     @property
     def generate_key_profiles(self) -> List[sop.SOPProfile]:
@@ -164,6 +165,7 @@ class SOPGPy(sop.StatelessOpenPGP):
     def generate_key(self, armor: bool = True, uids: List[str] = [],
                      keypassword: Optional[bytes] = None,
                      profile: Optional[sop.SOPProfile] = None,
+                     signing_only: bool = False,
                      **kwargs: Namespace) -> bytes:
         self.raise_on_unknown_options(**kwargs)
 
@@ -224,16 +226,18 @@ class SOPGPy(sop.StatelessOpenPGP):
             if 'primary' in prefs:  # only first User ID is Primary
                 del prefs['primary']
 
-        if profile is not None and profile.name == 'rfc4880':
-            subkey = pgpy.PGPKey.new(pgpy.constants.PubKeyAlgorithm.RSAEncryptOrSign)
-        elif profile is not None and profile.name == 'draft-ietf-openpgp-crypto-refresh-10':
-            subkey = pgpy.PGPKey.new(pgpy.constants.PubKeyAlgorithm.X25519, version=6)
-        else:
-            subkey = pgpy.PGPKey.new(pgpy.constants.PubKeyAlgorithm.ECDH)
-        subflags: Set[int] = set()
-        subflags.add(pgpy.constants.KeyFlags.EncryptCommunications)
-        subflags.add(pgpy.constants.KeyFlags.EncryptStorage)
-        primary.add_subkey(subkey, usage=subflags)
+        if not signing_only:
+            if profile is not None and profile.name == 'rfc4880':
+                subkey = pgpy.PGPKey.new(pgpy.constants.PubKeyAlgorithm.RSAEncryptOrSign)
+            elif profile is not None and profile.name == 'draft-ietf-openpgp-crypto-refresh-10':
+                subkey = pgpy.PGPKey.new(pgpy.constants.PubKeyAlgorithm.X25519, version=6)
+            else:
+                subkey = pgpy.PGPKey.new(pgpy.constants.PubKeyAlgorithm.ECDH)
+            subflags: Set[int] = set()
+            subflags.add(pgpy.constants.KeyFlags.EncryptCommunications)
+            subflags.add(pgpy.constants.KeyFlags.EncryptStorage)
+            primary.add_subkey(subkey, usage=subflags)
+
         if keypassword is not None:
             try:
                 pstring = keypassword.decode(encoding='utf-8')
@@ -326,7 +330,8 @@ class SOPGPy(sop.StatelessOpenPGP):
                 keypasswords: MutableMapping[str, bytes] = {},
                 recipients: MutableMapping[str, bytes] = {},
                 profile: Optional[sop.SOPProfile] = None,
-                **kwargs: Namespace) -> bytes:
+                wantsessionkey: bool = False,
+                **kwargs: Namespace) -> Tuple[bytes, Optional[sop.SOPSessionKey]]:
         self.raise_on_unknown_options(**kwargs)
         handle: str
         keys: MutableMapping[str, pgpy.PGPKey] = {}
@@ -410,8 +415,11 @@ class SOPGPy(sop.StatelessOpenPGP):
                profile.name == 'draft-ietf-openpgp-crypto-refresh-10':
                 aead_mode = pgpy.constants.AEADMode.OCB
             msg = msg.encrypt(passphrase=pw, sessionkey=sessionkey, aead_mode=aead_mode)
+        outsess: Optional[sop.SOPSessionKey] = None
+        if wantsessionkey:
+            outsess = sop.SOPSessionKey(int(cipher), sessionkey)
         del sessionkey
-        return self._maybe_armor(armor, msg)
+        return (self._maybe_armor(armor, msg), outsess)
 
     def _convert_sig_verification(self,
                                   cert: pgpy.PGPKey,
@@ -554,39 +562,20 @@ class SOPGPy(sop.StatelessOpenPGP):
         return (ret, sigs, None)
 
     def armor(self, data: bytes,
-              label: sop.SOPArmorLabel = sop.SOPArmorLabel.auto,
               **kwargs: Namespace) -> bytes:
         self.raise_on_unknown_options(**kwargs)
         obj: Union[None, pgpy.PGPMessage, pgpy.PGPKey, pgpy.PGPSignatures] = None
         try:
-            if label is sop.SOPArmorLabel.message:
-                obj = pgpy.PGPMessage.from_blob(data)
-            elif label is sop.SOPArmorLabel.key:
+            try:
                 obj, _ = pgpy.PGPKey.from_blob(data)
-                if not isinstance(obj, pgpy.PGPKey) or obj.is_public or not obj.is_primary:
-                    raise sop.SOPInvalidDataType('not an OpenPGP secret key')
-            elif label is sop.SOPArmorLabel.cert:
-                obj, _ = pgpy.PGPKey.from_blob(data)
-                if not isinstance(obj, pgpy.PGPKey) or not obj.is_public:
-                    raise sop.SOPInvalidDataType('not an OpenPGP certificate')
-            elif label is sop.SOPArmorLabel.sig:
-                obj = pgpy.PGPSignatures.from_blob(data)
-            elif label is sop.SOPArmorLabel.auto:  # try to guess
+                len(str(obj))  # try to get a string out of the supposed PGPKey, triggering an error if unset
+            except:
                 try:
-                    obj, _ = pgpy.PGPKey.from_blob(data)
-                    len(str(obj))  # try to get a string out of the supposed PGPKey, triggering an error if unset
+                    obj = pgpy.PGPSignatures.from_blob(data)
+                    len(str(obj))  # try to get a string out of the supposed PGPSignatures, triggering an error if unset
                 except:
-                    try:
-                        obj = pgpy.PGPSignatures.from_blob(data)
-                        len(str(obj))  # try to get a string out of the supposed PGPKey, triggering an error if unset
-                    except:
-                        try:
-                            obj = pgpy.PGPMessage.from_blob(data)
-                            len(str(obj))  # try to get a string out of the supposed PGPKey, triggering an error if unset
-                        except:
-                            obj = pgpy.PGPMessage.new(data)
-            else:
-                raise sop.SOPInvalidDataType(f'unknown armor type {label}')
+                    obj = pgpy.PGPMessage.from_blob(data)
+                    len(str(obj))  # try to get a string out of the supposed PGPMessage, triggering an error if unset
         except (ValueError, TypeError) as e:
             raise sop.SOPInvalidDataType(f'{e}')
         return str(obj).encode('ascii')
