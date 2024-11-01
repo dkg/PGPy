@@ -200,7 +200,7 @@ class Armorable(PGPObject, metaclass=abc.ABCMeta):
             return {'magic': None, 'headers': None, 'body': bytearray(text), 'crc': None}
 
         if isinstance(text, (bytes, bytearray)):  # pragma: no cover
-            text = text.decode('latin-1')
+            text = text.decode()
 
         matcher = Armorable.__armor_regex.search(text)
 
