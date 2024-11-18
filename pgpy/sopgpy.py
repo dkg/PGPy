@@ -178,6 +178,10 @@ class SOPGPy(sop.StatelessOpenPGP):
         primaryflags = pgpy.constants.KeyFlags.Certify | pgpy.constants.KeyFlags.Sign
         first: bool = True
 
+        # FIXME: if --signing-only, skip SEIPDv1 and SEIPDv2 in
+        # Features, and drop preferred ciphertext algorithms
+        # subpackets; no sense in advertising decryption capabilities
+        # when the cert has no encryption-capable subkey
         features = pgpy.constants.Features.SEIPDv1
         hashes: List[pgpy.constants.HashAlgorithm] = []
 
