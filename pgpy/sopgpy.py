@@ -34,6 +34,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import io
 import os
+import sys
 import codecs
 import logging
 import packaging.version
@@ -691,6 +692,7 @@ class SOPGPy(sop.StatelessOpenPGP):
 
 
 def main() -> None:
+    sys.tracebacklimit = int(os.environ.get('TRACEBACKLIMIT', 0))
     sop = SOPGPy()
     sop.dispatch()
 
