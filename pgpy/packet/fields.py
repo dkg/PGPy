@@ -758,7 +758,7 @@ class Ed448Pub(NativeEdDSAPub):
 
     @property
     def _public_length(self) -> int:
-        return 56
+        return 57
 
     def pub_from_bytes(self, b: bytes) -> ed448.Ed448PublicKey:
         return ed448.Ed448PublicKey.from_public_bytes(b)
