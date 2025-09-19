@@ -2695,6 +2695,13 @@ class PGPKey(Armorable, ParentRef):
             if usage is not None:
                 sig._signature.subpackets.addnew('KeyFlags', hashed=True, critical=True, flags=usage)
 
+            key_expires = prefs.pop('key_expiration', None)
+            if key_expires is not None:
+                # key expires should be a timedelta, so if it's a datetime, turn it into a timedelta
+                if isinstance(key_expires, datetime):
+                    key_expires = key_expires - key.created
+                sig._signature.subpackets.addnew('KeyExpirationTime', hashed=True, expires=key_expires)
+
             crosssig = None
             # if possible, have the subkey create a primary key binding signature
             if key.key_algorithm is not None and key.key_algorithm.can_sign and prefs.pop('crosssign', True):
