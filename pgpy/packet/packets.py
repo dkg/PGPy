@@ -1584,6 +1584,12 @@ class PrivKey(PubKey, Private):
                     raise TypeError(f"Expected CFRG public key, got {type(pk.keymaterial)} instead")
                 pk.keymaterial._raw_pubkey = self.keymaterial._raw_pubkey
 
+            elif isinstance(self.keymaterial, MLKEM768_X25519Pub):
+                if not isinstance(pk.keymaterial, MLKEM768_X25519Pub):
+                    raise TypeError(f"Expected MLKEM768_X25519 public key, got {type(pk.keymaterial)} instead")
+                pk.keymaterial._pub_ec = self.keymaterial._pub_ec
+                pk.keymaterial._pub_pqkem = self.keymaterial._pub_pqkem
+
         pk.update_hlen()
 
 

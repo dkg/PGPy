@@ -243,7 +243,7 @@ class PubKeyAlgorithm(IntEnum):
     X448 = 26
     Ed25519 = 27
     Ed448 = 28
-    MLKEM768_X25519 = 105
+    MLKEM768_X25519 = 35
 
     @classmethod
     def _missing_(cls, val: object) -> PubKeyAlgorithm:
