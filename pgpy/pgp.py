@@ -2676,7 +2676,7 @@ class PGPKey(Armorable, ParentRef):
             sig_type = SignatureType.PrimaryKey_Binding
 
         else:  # pragma: no cover
-            raise PGPError
+            raise PGPError('Cannot bind a primary key to another primary key')
 
         created: Optional[datetime] = prefs.pop('created', None)
 
