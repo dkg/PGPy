@@ -252,6 +252,25 @@ class SOPGPy(sop.StatelessOpenPGP):
             primary.protect(keypassword.decode('utf-8'))
         return self._maybe_armor(armor, primary)
 
+    def change_key_password(self,
+                            key:bytes,
+                            armor:bool=True,
+                            newkeypassword:Optional[bytes]=None,
+                            oldkeypasswords:MutableMapping[str,bytes]={},
+                            **kwargs:Namespace) -> bytes:
+        self.raise_on_unknown_options(**kwargs)
+        (seckey, _) = pgpy.PGPKey.from_blob(key)
+        # FIXME: while secret key is locked, try unlocking it:
+
+        if newkeypassword is not None:
+            try:
+                pstring = newkeypassword.decode(encoding='utf-8')
+            except UnicodeDecodeError:
+                raise sop.SOPPasswordNotHumanReadable(f'Key password was not UTF-8')
+            newkeypassword = pstring.strip().encode(encoding='utf-8')
+            seckey.protect(newkeypassword.decode('utf-8'))
+        return self._maybe_armor(armor, seckey)
+
     def extract_cert(self,
                      key: bytes = b'',
                      armor: bool = True,
