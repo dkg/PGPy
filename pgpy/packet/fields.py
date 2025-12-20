@@ -2726,7 +2726,6 @@ class MLKEM768_X25519Pub(PubKey):
 
 class MLKEM768_X25519Priv(PrivKey, MLKEM768_X25519Pub):
     _priv_ec_length: int = 32
-    _priv_pqkem_length: int = fips203.ML_KEM_768.DK_SIZE
 
     def clear(self) -> None:
         """delete and re-initialize all private components to zero"""
@@ -2739,7 +2738,8 @@ class MLKEM768_X25519Priv(PrivKey, MLKEM768_X25519Pub):
 
         self._priv_ec = x25519.X25519PrivateKey.generate()
         self._pub_ec = self._priv_ec.public_key()
-        (self._pub_pqkem, self._priv_pqkem) = fips203.ML_KEM_768.keygen()
+        self._pq_seed = fips203.Seed()
+        (self._pub_pqkem, self._priv_pqkem) = self._pq_seed.keygen(768)
 
         self._compute_chksum()
 
@@ -2751,15 +2751,19 @@ class MLKEM768_X25519Priv(PrivKey, MLKEM768_X25519Pub):
         if not self.s2k:
             self._priv_ec = x25519.X25519PrivateKey.from_private_bytes(bytes(packet[:self._priv_ec_length]))
             del packet[:self._priv_ec_length]
-            self._priv_pqkem = fips203.DecapsulationKey(bytes(packet[:self._priv_pqkem_length]))
-            del packet[:self._priv_ec_length]
+            self._pq_seed = fips203.Seed(data=bytes(packet[:fips203.ML_KEM.SEED_SIZE]))
+            del packet[:fips203.ML_KEM.SEED_SIZE]
+            (x, self._priv_pqkem) = self._pq_seed.keygen(768)
+            # assert that x is the pubkey:
+            if bytes(x) != bytes(self._pub_pqkem):
+                warn(f"MLKEM768 public key doesn't match")
         else:
             ##TODO: this needs to be bounded to the length of the encrypted key material
             self.encbytes = packet
 
     def _append_private_fields(self, _bytes: bytearray) -> None:
         _bytes += self._priv_ec.private_bytes_raw()
-        _bytes += bytes(self._priv_pqkem)
+        _bytes += bytes(self._pq_seed)
 
     def __privkey__(self) -> Tuple[fips203.DecapsulationKey, x25519.X25519PrivateKey]:
         return (self._priv_pqkem, self._priv_ec)
@@ -2777,8 +2781,12 @@ class MLKEM768_X25519Priv(PrivKey, MLKEM768_X25519Pub):
 
         self._priv_ec = x25519.X25519PrivateKey.from_private_bytes(kb[:self._priv_ec_length])
         del kb[:self._priv_ec_length]
-        self._priv_pqkem = fips203.DecapsulationKey(kb[:self._priv_pqkem_length])
-        del kb[:self._priv_pqkem_length]
+        self._pq_seed = fips203.Seed(data=kb[:fips203.ML_KEM_SEED_SIZE])
+        del kb[:fips203.ML_KEM_SEED_SIZE]
+        (x, self._priv_pqkem) = self._pq_seed.keygen(768)
+        # assert that x is the pubkey:
+        if bytes(x) != bytes(self._pub_pqkem):
+            warn(f"public key doesn't match ({len(bytes(x))} bytes, {len(bytes(self._pub_pqkem))})")
 
         if self.s2k.usage in [254, 255]:
             self.chksum = kb
