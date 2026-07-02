@@ -2700,7 +2700,7 @@ class PGPKey(Armorable, ParentRef):
                 # key expires should be a timedelta, so if it's a datetime, turn it into a timedelta
                 if isinstance(key_expires, datetime):
                     key_expires = key_expires - key.created
-                sig._signature.subpackets.addnew('KeyExpirationTime', hashed=True, expires=key_expires)
+                sig._signature.subpackets.addnew('KeyExpirationTime', hashed=True, critical=True, expires=key_expires)
 
             crosssig = None
             # if possible, have the subkey create a primary key binding signature
